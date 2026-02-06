@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { scrapeWebsite } from "@/lib/scraper";
 
 interface AnalyzeRequest {
   url: string;
@@ -10,12 +9,10 @@ interface AnalyzeRequest {
 }
 
 function parseJSON(content: string) {
-  // Try direct parse
   try {
     const jsonStr = content.replace(/```json?\n?/g, "").replace(/```\n?/g, "").trim();
     return JSON.parse(jsonStr);
   } catch {
-    // Try to extract JSON object from text
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
@@ -41,41 +38,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // STEP 1: Actually scrape the website to get real content
-    let scraped;
-    try {
-      scraped = await scrapeWebsite(url);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Could not fetch website";
-      return NextResponse.json(
-        { error: `Could not access the website: ${msg}. Make sure the URL is correct and the site is accessible.` },
-        { status: 400 }
-      );
+    // Normalize URL
+    let normalizedUrl = url.trim();
+    if (!normalizedUrl.startsWith("http://") && !normalizedUrl.startsWith("https://")) {
+      normalizedUrl = "https://" + normalizedUrl;
     }
 
-    // Build a rich context from the actual scraped data
-    const websiteContext = `
-WEBSITE URL: ${scraped.url}
-PAGE TITLE: ${scraped.title}
-META DESCRIPTION: ${scraped.metaDescription}
-META KEYWORDS: ${scraped.metaKeywords}
-OG TITLE: ${scraped.ogTitle}
-OG DESCRIPTION: ${scraped.ogDescription}
-
-HEADINGS ON THE PAGE:
-${scraped.headings.map((h) => `[${h.tag}] ${h.text}`).join("\n")}
-
-ACTUAL PAGE CONTENT (first 5000 chars):
-${scraped.bodyText}
-
-SCHEMA/STRUCTURED DATA:
-${scraped.schemaData || "None found"}
-
-EXTERNAL LINKS FOUND ON PAGE:
-${scraped.links.slice(0, 15).join("\n")}
-`.trim();
-
-    // STEP 2: Feed the REAL scraped content to AI for analysis
+    // Use Perplexity Sonar which has real-time web search/crawling built in
     const res = await fetch("https://api.perplexity.ai/chat/completions", {
       method: "POST",
       headers: {
@@ -87,42 +56,51 @@ ${scraped.links.slice(0, 15).join("\n")}
         messages: [
           {
             role: "system",
-            content: `You are a business intelligence analyst specializing in competitive analysis. You will receive the ACTUAL scraped content from a website. Based on this real data, analyze the business and return ONLY valid JSON.
+            content: `You are a business intelligence analyst. You will be given a website URL. You MUST visit and read the actual website to understand what the business does. Do not guess or make things up - base your analysis on the real content of the website.
 
-You must return this exact JSON structure:
+Return ONLY a valid JSON object with this exact structure:
 {
-  "businessName": "Company Name",
-  "description": "One paragraph about what this business does based on their actual website content",
-  "products": ["product/service 1", "product/service 2", "product/service 3"],
+  "businessName": "The actual company/brand name from the website",
+  "description": "A clear paragraph describing what this business actually does, based on their website content",
+  "products": ["actual product/service 1 from their site", "product/service 2", "product/service 3"],
   "icp": {
-    "persona": "Based on the website copy and messaging, describe who they're selling to",
-    "painPoints": ["pain point 1 they address", "pain point 2", "pain point 3"],
-    "demographics": "Job titles, company sizes, industries their copy targets"
+    "persona": "Based on the website's messaging and tone, who are they clearly selling to? What type of person or business?",
+    "painPoints": ["specific problem 1 their product solves", "problem 2", "problem 3"],
+    "demographics": "Job titles, company sizes, or customer types their website is speaking to"
   },
   "targetMarket": {
-    "countries": ["Country1", "Country2"],
-    "industries": ["Industry1", "Industry2", "Industry3"]
+    "countries": ["Countries they operate in or target based on the site"],
+    "industries": ["Industry 1 they serve", "Industry 2"]
   },
-  "competitors": ["competitor1.com", "competitor2.com", "competitor3.com", "competitor4.com", "competitor5.com", "competitor6.com"]
+  "competitors": ["competitor1.com", "competitor2.com", "competitor3.com", "competitor4.com", "competitor5.com", "competitor6.com", "competitor7.com", "competitor8.com"]
 }
 
-RULES:
-- Extract products/services ONLY from what you can actually see on the page content
-- Guess the ICP based on the language, tone, pricing signals, and who the copy is speaking to
-- For target market, look at language, currency, mentioned regions in the content
-- For competitors, use your knowledge to find 5-8 direct competitors in the same space - include their actual domain names
-- Return ONLY the JSON, no other text`,
+IMPORTANT RULES:
+- Products: List ONLY what you can confirm from the website. Read their features, pricing, product pages.
+- ICP: Look at who their copy is written for. What words do they use? "For teams", "For enterprises", "For freelancers"? What use cases do they highlight?
+- Pain points: What problems does their product solve? Look at their headlines, value propositions, benefit statements.
+- Target market: Check for language, currency, regional mentions, office locations, compliance badges (GDPR = Europe, SOC2 = enterprise US, etc.)
+- Competitors: Find 6-8 DIRECT competitors - companies selling similar products to similar customers. Include their actual domain names.
+
+Return ONLY the JSON. No explanation, no markdown.`,
           },
           {
             role: "user",
-            content: `Here is the actual scraped content from the website. Analyze it:
+            content: `Go to this website and analyze it thoroughly: ${normalizedUrl}
 
-${websiteContext}
+Read through the website content - their homepage, product descriptions, about page, pricing if available. Based on what you actually find on the site:
 
-Based on this REAL website data, extract the business info, guess their ICP, identify their target market, and find their competitors. Return ONLY JSON.`,
+1. What is the business name and what do they do?
+2. What specific products or services do they sell?
+3. Who is their ideal customer? Look at the language and tone of the website - who is it written for?
+4. What pain points does their product solve? Look at their headlines and value propositions.
+5. What countries/regions do they target? What industries?
+6. Who are their 6-8 direct competitors? Companies that sell similar things to similar customers.
+
+Return ONLY the JSON.`,
           },
         ],
-        max_tokens: 2000,
+        max_tokens: 2500,
         temperature: 0.2,
       }),
     });
@@ -136,16 +114,7 @@ Based on this REAL website data, extract the business info, guess their ICP, ide
     const content = data.choices?.[0]?.message?.content || "";
     const analysis = parseJSON(content);
 
-    // Return both the analysis and the scraped data so the frontend knows what was captured
-    return NextResponse.json({
-      analysis,
-      scraped: {
-        title: scraped.title,
-        metaDescription: scraped.metaDescription,
-        headingsCount: scraped.headings.length,
-        contentLength: scraped.bodyText.length,
-      },
-    });
+    return NextResponse.json({ analysis });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Internal server error";
     return NextResponse.json({ error: message }, { status: 500 });
