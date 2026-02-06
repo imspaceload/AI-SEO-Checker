@@ -1,13 +1,11 @@
 "use client";
 
 import { useStore } from "@/store/useStore";
-import { computeStats } from "@/lib/utils";
+import { computeStats, formatDate } from "@/lib/utils";
 import StatCard from "@/components/ui/StatCard";
 import RankingChart from "@/components/charts/RankingChart";
-import EmptyState from "@/components/ui/EmptyState";
 import ProviderBadge from "@/components/ui/ProviderBadge";
 import RankBadge from "@/components/ui/RankBadge";
-import { formatDate } from "@/lib/utils";
 import {
   BarChart3,
   CheckCircle2,
@@ -15,11 +13,15 @@ import {
   TrendingUp,
   Search,
   ArrowRight,
+  Sparkles,
+  Globe,
+  Swords,
 } from "lucide-react";
 import Link from "next/link";
 
 export default function DashboardPage() {
   const checks = useStore((s) => s.checks);
+  const analyses = useStore((s) => s.analyses);
   const stats = computeStats(checks);
 
   const recentResults = checks
@@ -32,143 +34,229 @@ export default function DashboardPage() {
     )
     .slice(0, 5);
 
+  const hasData = checks.length > 0 || analyses.length > 0;
+
   return (
     <div className="space-y-8">
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard
-          title="Total Checks"
-          value={stats.totalChecks}
-          icon={BarChart3}
-          iconColor="text-brand-600"
-          iconBg="bg-brand-50"
-        />
-        <StatCard
-          title="Ranked"
-          value={stats.rankedCount}
-          subtitle={
-            stats.totalChecks > 0
-              ? `${Math.round((stats.rankedCount / stats.totalChecks) * 100)}% of checks`
-              : undefined
-          }
-          icon={CheckCircle2}
-          iconColor="text-emerald-600"
-          iconBg="bg-emerald-50"
-        />
-        <StatCard
-          title="Not Ranked"
-          value={stats.notRankedCount}
-          icon={XCircle}
-          iconColor="text-red-600"
-          iconBg="bg-red-50"
-        />
-        <StatCard
-          title="Avg Position"
-          value={stats.avgPosition !== null ? `#${stats.avgPosition}` : "N/A"}
-          subtitle="When mentioned"
-          icon={TrendingUp}
-          iconColor="text-purple-600"
-          iconBg="bg-purple-50"
-        />
-      </div>
-
-      {/* Chart + Provider breakdown */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="card p-6 lg:col-span-2">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Ranking Overview by AI Model
-          </h3>
-          <RankingChart checks={checks} />
-        </div>
-
-        <div className="card p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
-            Provider Breakdown
-          </h3>
-          <div className="space-y-4">
-            {stats.byProvider.map((p) => (
-              <div key={p.provider} className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <ProviderBadge provider={p.provider} />
-                  <span className="text-sm text-gray-500">
-                    {p.ranked}/{p.total} ranked
-                  </span>
-                </div>
-                <div className="w-full bg-gray-100 rounded-full h-2">
-                  <div
-                    className="h-2 rounded-full transition-all bg-brand-500"
-                    style={{
-                      width: p.total > 0 ? `${(p.ranked / p.total) * 100}%` : "0%",
-                    }}
-                  />
-                </div>
+      {/* Hero CTA - Show when no data */}
+      {!hasData && (
+        <div className="card p-8 bg-gradient-to-br from-brand-50 to-purple-50 border-brand-200">
+          <div className="flex items-start justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">
+                Check your AI Search Rankings
+              </h2>
+              <p className="text-gray-600 mt-2 max-w-lg">
+                Enter your website URL and our AI will automatically analyze your business,
+                find your competitors, and check where you rank across ChatGPT, Perplexity, and Gemini.
+              </p>
+              <div className="flex gap-3 mt-6">
+                <Link
+                  href="/analyze"
+                  className="btn-primary flex items-center gap-2 py-2.5 px-5"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  Analyze My Website
+                </Link>
+                <Link
+                  href="/checker"
+                  className="btn-secondary flex items-center gap-2 py-2.5 px-5"
+                >
+                  <Search className="w-4 h-4" />
+                  Quick Check
+                </Link>
               </div>
-            ))}
+            </div>
+            <div className="hidden lg:flex flex-col gap-3 text-sm">
+              <div className="flex items-center gap-3 bg-white/80 rounded-lg px-4 py-3">
+                <Globe className="w-5 h-5 text-brand-600" />
+                <span className="text-gray-700">Enter your website URL</span>
+              </div>
+              <div className="flex items-center gap-3 bg-white/80 rounded-lg px-4 py-3">
+                <Swords className="w-5 h-5 text-red-500" />
+                <span className="text-gray-700">AI finds your competitors</span>
+              </div>
+              <div className="flex items-center gap-3 bg-white/80 rounded-lg px-4 py-3">
+                <TrendingUp className="w-5 h-5 text-emerald-500" />
+                <span className="text-gray-700">See who ranks for your keywords</span>
+              </div>
+            </div>
           </div>
-
-          <Link
-            href="/checker"
-            className="btn-primary w-full mt-6 flex items-center justify-center gap-2"
-          >
-            <Search className="w-4 h-4" />
-            New Rank Check
-          </Link>
         </div>
-      </div>
+      )}
 
-      {/* Recent Results */}
-      <div className="card">
-        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900">
-            Recent Results
-          </h3>
-          {recentResults.length > 0 && (
+      {/* Latest Analysis Summary */}
+      {analyses.length > 0 && (
+        <div className="card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Latest Analysis</h3>
             <Link
-              href="/results"
+              href="/analyze"
               className="text-sm text-brand-600 hover:text-brand-700 font-medium flex items-center gap-1"
             >
-              View all <ArrowRight className="w-4 h-4" />
+              New Analysis <ArrowRight className="w-4 h-4" />
             </Link>
-          )}
-        </div>
-
-        {recentResults.length === 0 ? (
-          <EmptyState
-            icon={Search}
-            title="No checks yet"
-            description="Run your first rank check to see how your website appears in AI model responses."
-            action={{ label: "Run Rank Check", href: "/checker" }}
-          />
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {recentResults.map((result) => (
+          </div>
+          <div className="space-y-3">
+            {analyses.slice(0, 3).map((a) => (
               <div
-                key={result.id}
-                className="px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                key={a.id}
+                className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
               >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      &ldquo;{result.query}&rdquo;
-                    </p>
-                    <ProviderBadge provider={result.provider} />
-                  </div>
-                  <p className="text-xs text-gray-500">{result.website}</p>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">{a.businessName}</p>
+                  <p className="text-xs text-gray-500">{a.url}</p>
                 </div>
-                <div className="flex items-center gap-4">
-                  <RankBadge
-                    isRanked={result.isRanked}
-                    position={result.position}
-                  />
-                  <span className="text-xs text-gray-400">
-                    {formatDate(result.checkedAt)}
+                <div className="flex items-center gap-3">
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-emerald-600">
+                      {a.rankResults.filter((r) => r.isYouRanked).length}/{a.rankResults.length}
+                    </p>
+                    <p className="text-xs text-gray-400">keywords ranked</p>
+                  </div>
+                  <span
+                    className={`badge ${
+                      a.status === "complete" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                    }`}
+                  >
+                    {a.status === "complete" ? "Complete" : "In Progress"}
                   </span>
                 </div>
               </div>
             ))}
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* Stats Grid */}
+      {hasData && (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <StatCard
+              title="Total Checks"
+              value={stats.totalChecks}
+              icon={BarChart3}
+              iconColor="text-brand-600"
+              iconBg="bg-brand-50"
+            />
+            <StatCard
+              title="Ranked"
+              value={stats.rankedCount}
+              subtitle={
+                stats.totalChecks > 0
+                  ? `${Math.round((stats.rankedCount / stats.totalChecks) * 100)}% of checks`
+                  : undefined
+              }
+              icon={CheckCircle2}
+              iconColor="text-emerald-600"
+              iconBg="bg-emerald-50"
+            />
+            <StatCard
+              title="Not Ranked"
+              value={stats.notRankedCount}
+              icon={XCircle}
+              iconColor="text-red-600"
+              iconBg="bg-red-50"
+            />
+            <StatCard
+              title="Avg Position"
+              value={stats.avgPosition !== null ? `#${stats.avgPosition}` : "N/A"}
+              subtitle="When mentioned"
+              icon={TrendingUp}
+              iconColor="text-purple-600"
+              iconBg="bg-purple-50"
+            />
+          </div>
+
+          {/* Chart + Provider breakdown */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="card p-6 lg:col-span-2">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                Ranking Overview by AI Model
+              </h3>
+              <RankingChart checks={checks} />
+            </div>
+
+            <div className="card p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                Provider Breakdown
+              </h3>
+              <div className="space-y-4">
+                {stats.byProvider.map((p) => (
+                  <div key={p.provider} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <ProviderBadge provider={p.provider} />
+                      <span className="text-sm text-gray-500">
+                        {p.ranked}/{p.total} ranked
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-2">
+                      <div
+                        className="h-2 rounded-full transition-all bg-brand-500"
+                        style={{
+                          width: p.total > 0 ? `${(p.ranked / p.total) * 100}%` : "0%",
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <Link
+                href="/analyze"
+                className="btn-primary w-full mt-6 flex items-center justify-center gap-2"
+              >
+                <Sparkles className="w-4 h-4" />
+                Analyze Website
+              </Link>
+            </div>
+          </div>
+
+          {/* Recent Results */}
+          {recentResults.length > 0 && (
+            <div className="card">
+              <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Recent Quick Checks
+                </h3>
+                <Link
+                  href="/results"
+                  className="text-sm text-brand-600 hover:text-brand-700 font-medium flex items-center gap-1"
+                >
+                  View all <ArrowRight className="w-4 h-4" />
+                </Link>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {recentResults.map((result) => (
+                  <div
+                    key={result.id}
+                    className="px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          &ldquo;{result.query}&rdquo;
+                        </p>
+                        <ProviderBadge provider={result.provider} />
+                      </div>
+                      <p className="text-xs text-gray-500">{result.website}</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <RankBadge
+                        isRanked={result.isRanked}
+                        position={result.position}
+                      />
+                      <span className="text-xs text-gray-400">
+                        {formatDate(result.checkedAt)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Search,
+  Sparkles,
   History,
   Settings,
   Activity,
@@ -12,7 +13,8 @@ import {
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/checker", label: "Rank Checker", icon: Search },
+  { href: "/analyze", label: "Analyze Website", icon: Sparkles },
+  { href: "/checker", label: "Quick Check", icon: Search },
   { href: "/results", label: "Results History", icon: History },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

@@ -5,7 +5,8 @@ import { Bell, Search } from "lucide-react";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
-  "/checker": "Rank Checker",
+  "/analyze": "Analyze Website",
+  "/checker": "Quick Check",
   "/results": "Results History",
   "/settings": "Settings",
 };
