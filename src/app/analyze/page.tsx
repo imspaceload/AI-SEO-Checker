@@ -39,6 +39,12 @@ export default function AnalyzePage() {
   const [rankingProgress, setRankingProgress] = useState({ current: 0, total: 0, keyword: "" });
   const [expandedKeyword, setExpandedKeyword] = useState<string | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<AIProvider>("perplexity");
+  const [scrapedInfo, setScrapedInfo] = useState<{
+    title: string;
+    metaDescription: string;
+    headingsCount: number;
+    contentLength: number;
+  } | null>(null);
 
   const { apiKeys, addAnalysis, updateAnalysis } = useStore();
 
@@ -87,6 +93,9 @@ export default function AnalyzePage() {
 
       setAnalysis(updated);
       addAnalysis(updated);
+      if (data.scraped) {
+        setScrapedInfo(data.scraped);
+      }
       setStep("review");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Analysis failed";
@@ -298,9 +307,15 @@ export default function AnalyzePage() {
             Analyzing {url}...
           </h3>
           <p className="text-sm text-gray-500 mt-2 text-center max-w-md">
-            Our AI is researching your business, identifying your ideal customer profile,
-            target market, and finding your competitors.
+            Scraping your website to read the actual page content, headings, meta tags,
+            and structured data. Then feeding it to AI to extract your business info,
+            ICP, and competitors.
           </p>
+          <div className="mt-6 space-y-2 text-xs text-gray-400 text-left">
+            <p>1. Fetching website HTML...</p>
+            <p>2. Extracting title, meta, headings, page copy...</p>
+            <p>3. AI analyzing real content for ICP and competitors...</p>
+          </div>
         </div>
       )}
 
@@ -323,6 +338,20 @@ export default function AnalyzePage() {
                 </div>
               </div>
             </div>
+
+            {/* Scraped data indicator */}
+            {scrapedInfo && (
+              <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                <p className="text-xs font-medium text-gray-500 mb-1">Scraped from your website:</p>
+                <p className="text-sm text-gray-700 font-medium">{scrapedInfo.title}</p>
+                {scrapedInfo.metaDescription && (
+                  <p className="text-xs text-gray-500 mt-0.5">{scrapedInfo.metaDescription}</p>
+                )}
+                <p className="text-xs text-gray-400 mt-1">
+                  {scrapedInfo.headingsCount} headings extracted &middot; {Math.round(scrapedInfo.contentLength / 100) / 10}k chars of content analyzed
+                </p>
+              </div>
+            )}
 
             {error && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
