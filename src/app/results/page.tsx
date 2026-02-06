@@ -56,7 +56,7 @@ export default function ResultsPage() {
           >
             <option value="all">All Models</option>
             <option value="chatgpt">ChatGPT</option>
-            <option value="claude">Claude</option>
+            <option value="perplexity">Perplexity</option>
             <option value="gemini">Gemini</option>
           </select>
           <select

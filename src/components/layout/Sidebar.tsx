@@ -66,8 +66,8 @@ export default function Sidebar() {
               <span className="text-xs text-gray-600">ChatGPT</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-amber-500" />
-              <span className="text-xs text-gray-600">Claude</span>
+              <span className="w-2 h-2 rounded-full bg-cyan-500" />
+              <span className="text-xs text-gray-600">Perplexity</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-blue-500" />

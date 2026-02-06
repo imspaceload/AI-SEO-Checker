@@ -15,8 +15,8 @@ interface AppState {
 export const useStore = create<AppState>((set) => ({
   checks: [],
   apiKeys: {
-    openai: "",
-    anthropic: "",
+    perplexity: "",
+    rapidapi: "",
     google: "",
   },
   isLoading: false,

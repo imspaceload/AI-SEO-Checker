@@ -1,4 +1,4 @@
-export type AIProvider = "chatgpt" | "claude" | "gemini";
+export type AIProvider = "chatgpt" | "perplexity" | "gemini";
 
 export interface RankCheckResult {
   id: string;
@@ -33,7 +33,7 @@ export interface DashboardStats {
 }
 
 export interface APIKeyConfig {
-  openai: string;
-  anthropic: string;
+  perplexity: string;
+  rapidapi: string;
   google: string;
 }

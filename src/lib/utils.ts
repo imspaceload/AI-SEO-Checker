@@ -7,7 +7,7 @@ export function generateId(): string {
 export function getProviderName(provider: AIProvider): string {
   const names: Record<AIProvider, string> = {
     chatgpt: "ChatGPT",
-    claude: "Claude",
+    perplexity: "Perplexity",
     gemini: "Gemini",
   };
   return names[provider];
@@ -16,7 +16,7 @@ export function getProviderName(provider: AIProvider): string {
 export function getProviderColor(provider: AIProvider): string {
   const colors: Record<AIProvider, string> = {
     chatgpt: "#10a37f",
-    claude: "#d97706",
+    perplexity: "#20b8cd",
     gemini: "#4285f4",
   };
   return colors[provider];
@@ -25,7 +25,7 @@ export function getProviderColor(provider: AIProvider): string {
 export function getProviderBgClass(provider: AIProvider): string {
   const classes: Record<AIProvider, string> = {
     chatgpt: "bg-emerald-100 text-emerald-700",
-    claude: "bg-amber-100 text-amber-700",
+    perplexity: "bg-cyan-100 text-cyan-700",
     gemini: "bg-blue-100 text-blue-700",
   };
   return classes[provider];
@@ -38,7 +38,7 @@ export function computeStats(checks: RankCheck[]): DashboardStats {
     .map((r) => r.position)
     .filter((p): p is number => p !== null);
 
-  const providers: AIProvider[] = ["chatgpt", "claude", "gemini"];
+  const providers: AIProvider[] = ["chatgpt", "perplexity", "gemini"];
   const byProvider = providers.map((provider) => {
     const providerResults = allResults.filter((r) => r.provider === provider);
     return {

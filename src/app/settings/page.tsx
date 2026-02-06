@@ -14,26 +14,26 @@ import {
 
 const apiKeyFields = [
   {
-    key: "openai" as const,
-    label: "OpenAI API Key",
-    placeholder: "sk-...",
-    description: "Required for ChatGPT ranking checks",
-    docsUrl: "https://platform.openai.com/api-keys",
-    envVar: "OPENAI_API_KEY",
+    key: "perplexity" as const,
+    label: "Perplexity API Key",
+    placeholder: "pplx-...",
+    description: "Required for Perplexity ranking checks (Sonar model with web search)",
+    docsUrl: "https://docs.perplexity.ai/",
+    envVar: "PERPLEXITY_API_KEY",
   },
   {
-    key: "anthropic" as const,
-    label: "Anthropic API Key",
-    placeholder: "sk-ant-...",
-    description: "Required for Claude ranking checks",
-    docsUrl: "https://console.anthropic.com/settings/keys",
-    envVar: "ANTHROPIC_API_KEY",
+    key: "rapidapi" as const,
+    label: "RapidAPI Key",
+    placeholder: "Your RapidAPI key...",
+    description: "Required for ChatGPT (GPT-4o) ranking checks via RapidAPI",
+    docsUrl: "https://rapidapi.com/",
+    envVar: "RAPIDAPI_KEY",
   },
   {
     key: "google" as const,
-    label: "Google AI API Key",
+    label: "Google AI API Key (Optional)",
     placeholder: "AI...",
-    description: "Required for Gemini ranking checks",
+    description: "Optional - enables Gemini ranking checks",
     docsUrl: "https://aistudio.google.com/app/apikey",
     envVar: "GOOGLE_AI_API_KEY",
   },
@@ -76,6 +76,14 @@ export default function SettingsPage() {
         </div>
 
         <div className="p-6 space-y-6">
+          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
+            <p className="text-sm text-emerald-800">
+              <strong>Your keys are pre-configured!</strong> Perplexity and RapidAPI
+              keys are set via environment variables. You can override them here
+              if needed, or add a Google AI key to enable Gemini checks.
+            </p>
+          </div>
+
           <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
             <p className="text-sm text-blue-800">
               <strong>Tip:</strong> You can also set API keys as environment
@@ -160,7 +168,7 @@ export default function SettingsPage() {
         <div className="space-y-3 text-sm text-gray-600">
           <p>
             AI SEO Rank Checker helps you understand how your website appears in
-            AI-powered search responses from ChatGPT, Claude, and Gemini.
+            AI-powered search responses from ChatGPT, Perplexity, and Gemini.
           </p>
           <p>
             <strong>How it works:</strong> We send your search query to each AI
@@ -169,9 +177,17 @@ export default function SettingsPage() {
             AI search landscape.
           </p>
           <p>
-            <strong>Privacy:</strong> API keys are stored locally in your
-            browser. Queries are sent directly from the server to AI providers.
-            No data is collected or stored on external servers.
+            <strong>Providers:</strong>
+          </p>
+          <ul className="list-disc pl-5 space-y-1">
+            <li><strong>ChatGPT</strong> - GPT-4o via RapidAPI</li>
+            <li><strong>Perplexity</strong> - Sonar model with real-time web search (best for checking current rankings)</li>
+            <li><strong>Gemini</strong> - Google&apos;s Gemini model (requires separate Google AI API key)</li>
+          </ul>
+          <p>
+            <strong>Privacy:</strong> API keys stored in the browser override
+            environment variables. Queries are sent from the server to AI
+            providers. No data is collected or stored on external servers.
           </p>
         </div>
       </div>

@@ -18,7 +18,7 @@ interface RankingChartProps {
 }
 
 export default function RankingChart({ checks }: RankingChartProps) {
-  const providers: AIProvider[] = ["chatgpt", "claude", "gemini"];
+  const providers: AIProvider[] = ["chatgpt", "perplexity", "gemini"];
 
   const data = providers.map((provider) => {
     const results = checks.flatMap((c) =>

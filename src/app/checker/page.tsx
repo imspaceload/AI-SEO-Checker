@@ -21,17 +21,17 @@ const providers: { id: AIProvider; name: string; description: string }[] = [
   {
     id: "chatgpt",
     name: "ChatGPT",
-    description: "OpenAI's GPT model",
+    description: "GPT-4o via RapidAPI",
   },
   {
-    id: "claude",
-    name: "Claude",
-    description: "Anthropic's Claude model",
+    id: "perplexity",
+    name: "Perplexity",
+    description: "Perplexity Sonar (real-time web search)",
   },
   {
     id: "gemini",
     name: "Gemini",
-    description: "Google's Gemini model",
+    description: "Google's Gemini model (optional)",
   },
 ];
 
@@ -40,8 +40,7 @@ export default function CheckerPage() {
   const [website, setWebsite] = useState("");
   const [selectedProviders, setSelectedProviders] = useState<AIProvider[]>([
     "chatgpt",
-    "claude",
-    "gemini",
+    "perplexity",
   ]);
   const [isChecking, setIsChecking] = useState(false);
   const [currentResults, setCurrentResults] = useState<RankCheckResult[]>([]);
@@ -105,7 +104,7 @@ export default function CheckerPage() {
   };
 
   const hasKeys =
-    apiKeys.openai || apiKeys.anthropic || apiKeys.google;
+    apiKeys.perplexity || apiKeys.rapidapi || apiKeys.google;
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">

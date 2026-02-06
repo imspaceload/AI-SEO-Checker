@@ -6,8 +6,8 @@ interface CheckRequest {
   website: string;
   providers: AIProvider[];
   apiKeys: {
-    openai: string;
-    anthropic: string;
+    perplexity: string;
+    rapidapi: string;
     google: string;
   };
 }
@@ -25,20 +25,22 @@ function analyzeResponse(
   website: string
 ): { isRanked: boolean; position: number | null; snippet: string } {
   const normalizedResponse = response.toLowerCase();
-  const normalizedWebsite = website.toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, "").replace(/\/$/, "");
+  const normalizedWebsite = website
+    .toLowerCase()
+    .replace(/^(https?:\/\/)?(www\.)?/, "")
+    .replace(/\/$/, "");
 
   // Check for website mention in various forms
   const patterns = [
     normalizedWebsite,
-    normalizedWebsite.replace(/\./g, "[.]"),
-    normalizedWebsite.split(".")[0], // brand name
+    normalizedWebsite.split(".")[0], // brand name (e.g., "notion" from "notion.so")
   ];
 
   let isRanked = false;
   let position: number | null = null;
 
   for (const pattern of patterns) {
-    if (normalizedResponse.includes(pattern)) {
+    if (pattern.length >= 3 && normalizedResponse.includes(pattern)) {
       isRanked = true;
       break;
     }
@@ -49,9 +51,7 @@ function analyzeResponse(
     const lines = response.split("\n");
     for (const line of lines) {
       const lowerLine = line.toLowerCase();
-      if (
-        patterns.some((p) => lowerLine.includes(p))
-      ) {
+      if (patterns.some((p) => p.length >= 3 && lowerLine.includes(p))) {
         const match = line.match(/^[\s]*(\d+)[.)]\s/);
         if (match) {
           position = parseInt(match[1]);
@@ -66,9 +66,7 @@ function analyzeResponse(
   if (isRanked) {
     const sentences = response.split(/[.!?]+/);
     for (const sentence of sentences) {
-      if (
-        patterns.some((p) => sentence.toLowerCase().includes(p))
-      ) {
+      if (patterns.some((p) => p.length >= 3 && sentence.toLowerCase().includes(p))) {
         snippet = sentence.trim() + ".";
         break;
       }
@@ -80,12 +78,13 @@ function analyzeResponse(
   return { isRanked, position, snippet };
 }
 
+// ChatGPT via RapidAPI
 async function checkChatGPT(
   query: string,
   website: string,
   apiKey: string
 ): Promise<RankCheckResult> {
-  const key = apiKey || process.env.OPENAI_API_KEY;
+  const key = apiKey || process.env.RAPIDAPI_KEY;
   if (!key) {
     return {
       id: generateId(),
@@ -94,41 +93,48 @@ async function checkChatGPT(
       provider: "chatgpt",
       isRanked: false,
       position: null,
-      snippet: "OpenAI API key not configured.",
-      response: "Error: No API key provided for ChatGPT.",
+      snippet: "RapidAPI key not configured.",
+      response: "Error: No RapidAPI key provided for ChatGPT.",
       checkedAt: new Date().toISOString(),
     };
   }
 
   try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a helpful assistant. When answering questions about products, services, or tools, be specific and include website URLs, company names, and brand names where relevant.",
-          },
-          { role: "user", content: buildPrompt(query) },
-        ],
-        max_tokens: 1500,
-        temperature: 0.7,
-      }),
-    });
+    const res = await fetch(
+      "https://cheapest-gpt-4-turbo-gpt-4-vision-chatgpt-openai-ai-api.p.rapidapi.com/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-rapidapi-host":
+            "cheapest-gpt-4-turbo-gpt-4-vision-chatgpt-openai-ai-api.p.rapidapi.com",
+          "x-rapidapi-key": key,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o",
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a helpful assistant. When answering questions about products, services, or tools, be specific and include website URLs, company names, and brand names where relevant.",
+            },
+            { role: "user", content: buildPrompt(query) },
+          ],
+          max_tokens: 1500,
+          temperature: 0.7,
+        }),
+      }
+    );
 
     if (!res.ok) {
       const error = await res.json();
-      throw new Error(error.error?.message || "ChatGPT API error");
+      throw new Error(
+        error.error?.message || error.message || `ChatGPT API error (${res.status})`
+      );
     }
 
     const data = await res.json();
-    const response = data.choices[0]?.message?.content || "";
+    const response = data.choices?.[0]?.message?.content || "";
     const analysis = analyzeResponse(response, website);
 
     return {
@@ -158,58 +164,65 @@ async function checkChatGPT(
   }
 }
 
-async function checkClaude(
+// Perplexity AI (great for search-based ranking since it does real-time web search)
+async function checkPerplexity(
   query: string,
   website: string,
   apiKey: string
 ): Promise<RankCheckResult> {
-  const key = apiKey || process.env.ANTHROPIC_API_KEY;
+  const key = apiKey || process.env.PERPLEXITY_API_KEY;
   if (!key) {
     return {
       id: generateId(),
       query,
       website,
-      provider: "claude",
+      provider: "perplexity",
       isRanked: false,
       position: null,
-      snippet: "Anthropic API key not configured.",
-      response: "Error: No API key provided for Claude.",
+      snippet: "Perplexity API key not configured.",
+      response: "Error: No API key provided for Perplexity.",
       checkedAt: new Date().toISOString(),
     };
   }
 
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetch("https://api.perplexity.ai/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
+        Authorization: `Bearer ${key}`,
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-5-20250929",
-        max_tokens: 1500,
+        model: "sonar",
         messages: [
+          {
+            role: "system",
+            content:
+              "You are a helpful assistant. When answering questions about products, services, or tools, be specific and include website URLs, company names, and brand names where relevant. Provide comprehensive recommendations with real sources.",
+          },
           { role: "user", content: buildPrompt(query) },
         ],
+        max_tokens: 1500,
+        temperature: 0.7,
       }),
     });
 
     if (!res.ok) {
       const error = await res.json();
-      throw new Error(error.error?.message || "Claude API error");
+      throw new Error(
+        error.error?.message || error.detail || `Perplexity API error (${res.status})`
+      );
     }
 
     const data = await res.json();
-    const response =
-      data.content?.[0]?.type === "text" ? data.content[0].text : "";
+    const response = data.choices?.[0]?.message?.content || "";
     const analysis = analyzeResponse(response, website);
 
     return {
       id: generateId(),
       query,
       website,
-      provider: "claude",
+      provider: "perplexity",
       isRanked: analysis.isRanked,
       position: analysis.position,
       snippet: analysis.snippet,
@@ -222,16 +235,17 @@ async function checkClaude(
       id: generateId(),
       query,
       website,
-      provider: "claude",
+      provider: "perplexity",
       isRanked: false,
       position: null,
       snippet: `Error: ${message}`,
-      response: `Failed to check Claude: ${message}`,
+      response: `Failed to check Perplexity: ${message}`,
       checkedAt: new Date().toISOString(),
     };
   }
 }
 
+// Gemini (optional - needs Google AI API key)
 async function checkGemini(
   query: string,
   website: string,
@@ -246,8 +260,8 @@ async function checkGemini(
       provider: "gemini",
       isRanked: false,
       position: null,
-      snippet: "Google AI API key not configured.",
-      response: "Error: No API key provided for Gemini.",
+      snippet: "Google AI API key not configured. Add one in Settings to enable Gemini checks.",
+      response: "Error: No API key provided for Gemini. Get one free at https://aistudio.google.com/app/apikey",
       checkedAt: new Date().toISOString(),
     };
   }
@@ -259,11 +273,7 @@ async function checkGemini(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [
-            {
-              parts: [{ text: buildPrompt(query) }],
-            },
-          ],
+          contents: [{ parts: [{ text: buildPrompt(query) }] }],
           generationConfig: {
             maxOutputTokens: 1500,
             temperature: 0.7,
@@ -274,14 +284,11 @@ async function checkGemini(
 
     if (!res.ok) {
       const error = await res.json();
-      throw new Error(
-        error.error?.message || "Gemini API error"
-      );
+      throw new Error(error.error?.message || "Gemini API error");
     }
 
     const data = await res.json();
-    const response =
-      data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const response = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
     const analysis = analyzeResponse(response, website);
 
     return {
@@ -328,13 +335,13 @@ export async function POST(request: NextRequest) {
       (q: string, w: string, k: string) => Promise<RankCheckResult>
     > = {
       chatgpt: checkChatGPT,
-      claude: checkClaude,
+      perplexity: checkPerplexity,
       gemini: checkGemini,
     };
 
     const keyMap: Record<AIProvider, string> = {
-      chatgpt: apiKeys?.openai || "",
-      claude: apiKeys?.anthropic || "",
+      chatgpt: apiKeys?.rapidapi || "",
+      perplexity: apiKeys?.perplexity || "",
       gemini: apiKeys?.google || "",
     };
 
@@ -347,7 +354,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ results });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Internal server error";
+    const message =
+      error instanceof Error ? error.message : "Internal server error";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
