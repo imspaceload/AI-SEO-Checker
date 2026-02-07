@@ -8,7 +8,7 @@ const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/analyze": "Analyze Website",
   "/checker": "Quick Check",
-  "/results": "Results History",
+  "/pricing": "Pricing",
   "/settings": "Settings",
 };
 

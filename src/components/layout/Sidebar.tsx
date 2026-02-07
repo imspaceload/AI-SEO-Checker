@@ -6,7 +6,6 @@ import {
   LayoutDashboard,
   Search,
   Sparkles,
-  History,
   Settings,
   Activity,
   CreditCard,
@@ -16,7 +15,6 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/analyze", label: "Analyze Website", icon: Sparkles },
   { href: "/checker", label: "Quick Check", icon: Search },
-  { href: "/results", label: "Results History", icon: History },
   { href: "/pricing", label: "Pricing", icon: CreditCard },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

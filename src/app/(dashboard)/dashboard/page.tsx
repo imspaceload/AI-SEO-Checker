@@ -4,22 +4,17 @@ import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useStore } from "@/store/useStore";
-import { computeStats, formatDate } from "@/lib/utils";
-import StatCard from "@/components/ui/StatCard";
-import RankingChart from "@/components/charts/RankingChart";
-import ProviderBadge from "@/components/ui/ProviderBadge";
-import RankBadge from "@/components/ui/RankBadge";
 import {
-  BarChart3,
   CheckCircle2,
   XCircle,
-  TrendingUp,
-  Search,
   ArrowRight,
   Sparkles,
   Globe,
   Swords,
+  TrendingUp,
   Zap,
+  Search,
+  ExternalLink,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -33,9 +28,7 @@ interface UsageInfo {
 }
 
 function DashboardContent() {
-  const checks = useStore((s) => s.checks);
   const analyses = useStore((s) => s.analyses);
-  const stats = computeStats(checks);
   const [usage, setUsage] = useState<UsageInfo | null>(null);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const searchParams = useSearchParams();
@@ -52,11 +45,8 @@ function DashboardContent() {
   useEffect(() => {
     if (searchParams.get("payment") === "success") {
       setPaymentSuccess(true);
-      // Refresh session to pick up new plan
       update();
-      // Remove query param from URL
       window.history.replaceState({}, "", "/dashboard");
-      // Refresh usage data
       setTimeout(() => {
         fetch("/api/user/usage")
           .then((r) => r.ok ? r.json() : null)
@@ -66,17 +56,22 @@ function DashboardContent() {
     }
   }, [searchParams, update]);
 
-  const recentResults = checks
-    .flatMap((c) =>
-      c.results.map((r) => ({
-        ...r,
-        query: c.query,
-        website: c.website,
-      }))
-    )
-    .slice(0, 5);
+  const hasAnalyses = analyses.length > 0;
 
-  const hasData = checks.length > 0 || analyses.length > 0;
+  // Get ranking stats from result response (provider map JSON)
+  const getRankingCount = (analysis: typeof analyses[0]) => {
+    let ranked = 0;
+    let total = analysis.rankResults.length;
+    analysis.rankResults.forEach((r) => {
+      try {
+        const map = JSON.parse(r.response);
+        if (map.perplexity || map.chatgpt || map.gemini) ranked++;
+      } catch {
+        if (r.isYouRanked) ranked++;
+      }
+    });
+    return { ranked, total };
+  };
 
   return (
     <div className="space-y-8">
@@ -158,8 +153,8 @@ function DashboardContent() {
         </div>
       )}
 
-      {/* Hero CTA - Show when no data */}
-      {!hasData && (
+      {/* Hero CTA - Show when no analyses */}
+      {!hasAnalyses && (
         <div className="card p-8 bg-gradient-to-br from-brand-50 to-purple-50 border-brand-200">
           <div className="flex items-start justify-between">
             <div>
@@ -205,177 +200,147 @@ function DashboardContent() {
         </div>
       )}
 
-      {/* Latest Analysis Summary */}
-      {analyses.length > 0 && (
-        <div className="card p-6">
+      {/* Website Analysis History */}
+      {hasAnalyses && (
+        <div>
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Latest Analysis</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Your Websites</h3>
             <Link
               href="/analyze"
               className="text-sm text-brand-600 hover:text-brand-700 font-medium flex items-center gap-1"
             >
-              New Analysis <ArrowRight className="w-4 h-4" />
+              <Sparkles className="w-3.5 h-3.5" />
+              New Analysis
             </Link>
           </div>
+
           <div className="space-y-3">
-            {analyses.slice(0, 3).map((a) => (
-              <div
-                key={a.id}
-                className="flex items-center justify-between p-4 bg-gray-50 rounded-lg"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">{a.businessName}</p>
-                  <p className="text-xs text-gray-500">{a.url}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="text-right">
-                    <p className="text-sm font-bold text-emerald-600">
-                      {a.rankResults.filter((r) => r.isYouRanked).length}/{a.rankResults.length}
-                    </p>
-                    <p className="text-xs text-gray-400">keywords ranked</p>
+            {analyses.map((a) => {
+              const { ranked, total } = getRankingCount(a);
+              const keywordCount = a.keywords.reduce((acc, g) => acc + g.keywords.length, 0);
+
+              return (
+                <div
+                  key={a.id}
+                  className="card p-5 hover:shadow-md transition-shadow"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h4 className="text-base font-semibold text-gray-900 truncate">
+                          {a.businessName || "Untitled Website"}
+                        </h4>
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            a.status === "complete"
+                              ? "bg-emerald-50 text-emerald-700"
+                              : a.status === "error"
+                              ? "bg-red-50 text-red-700"
+                              : "bg-amber-50 text-amber-700"
+                          }`}
+                        >
+                          {a.status === "complete" ? "Complete" : a.status === "error" ? "Error" : "In Progress"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-sm text-gray-500">
+                        <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">{a.url}</span>
+                      </div>
+                      {a.description && (
+                        <p className="text-xs text-gray-400 mt-1.5 line-clamp-1">{a.description}</p>
+                      )}
+                    </div>
+
+                    {/* Stats */}
+                    <div className="flex items-center gap-4 ml-4 shrink-0">
+                      {keywordCount > 0 && (
+                        <div className="text-center">
+                          <p className="text-lg font-bold text-gray-900">{keywordCount}</p>
+                          <p className="text-xs text-gray-400">Keywords</p>
+                        </div>
+                      )}
+                      {total > 0 && (
+                        <div className="text-center">
+                          <p className="text-lg font-bold text-emerald-600">
+                            {ranked}<span className="text-sm text-gray-400 font-normal">/{total}</span>
+                          </p>
+                          <p className="text-xs text-gray-400">Ranking</p>
+                        </div>
+                      )}
+                      {total > 0 && (
+                        <div className="text-center">
+                          <p className="text-lg font-bold text-red-500">
+                            {total - ranked}
+                          </p>
+                          <p className="text-xs text-gray-400">Not Ranking</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <span
-                    className={`badge ${
-                      a.status === "complete" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
-                    }`}
-                  >
-                    {a.status === "complete" ? "Complete" : "In Progress"}
-                  </span>
+
+                  {/* Competitors + Products tags */}
+                  {(a.competitors.length > 0 || a.products.length > 0) && (
+                    <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap gap-1.5">
+                      {a.products.slice(0, 3).map((p, i) => (
+                        <span key={`p-${i}`} className="text-xs px-2 py-0.5 rounded-full bg-brand-50 text-brand-700">
+                          {p}
+                        </span>
+                      ))}
+                      {a.competitors.slice(0, 4).map((c, i) => (
+                        <span key={`c-${i}`} className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                          {c}
+                        </span>
+                      ))}
+                      {(a.products.length > 3 || a.competitors.length > 4) && (
+                        <span className="text-xs text-gray-400 px-1">
+                          +{Math.max(0, a.products.length - 3) + Math.max(0, a.competitors.length - 4)} more
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Per-provider ranking breakdown (if results exist) */}
+                  {total > 0 && (
+                    <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-3 gap-3">
+                      {(["perplexity", "chatgpt", "gemini"] as const).map((provider) => {
+                        let providerRanked = 0;
+                        let providerTotal = 0;
+                        a.rankResults.forEach((r) => {
+                          try {
+                            const map = JSON.parse(r.response);
+                            if (provider in map) {
+                              providerTotal++;
+                              if (map[provider]) providerRanked++;
+                            }
+                          } catch {
+                            if (r.provider === provider) {
+                              providerTotal++;
+                              if (r.isYouRanked) providerRanked++;
+                            }
+                          }
+                        });
+                        const label = provider === "chatgpt" ? "ChatGPT" : provider === "perplexity" ? "Perplexity" : "Gemini";
+
+                        return (
+                          <div key={provider} className="flex items-center justify-between text-xs">
+                            <span className="text-gray-500">{label}</span>
+                            {providerTotal > 0 ? (
+                              <span className={`font-semibold ${providerRanked > 0 ? "text-emerald-600" : "text-red-500"}`}>
+                                {providerRanked}/{providerTotal}
+                              </span>
+                            ) : (
+                              <span className="text-gray-300">-</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
-      )}
-
-      {/* Stats Grid */}
-      {hasData && (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <StatCard
-              title="Total Checks"
-              value={stats.totalChecks}
-              icon={BarChart3}
-              iconColor="text-brand-600"
-              iconBg="bg-brand-50"
-            />
-            <StatCard
-              title="Ranked"
-              value={stats.rankedCount}
-              subtitle={
-                stats.totalChecks > 0
-                  ? `${Math.round((stats.rankedCount / stats.totalChecks) * 100)}% of checks`
-                  : undefined
-              }
-              icon={CheckCircle2}
-              iconColor="text-emerald-600"
-              iconBg="bg-emerald-50"
-            />
-            <StatCard
-              title="Not Ranked"
-              value={stats.notRankedCount}
-              icon={XCircle}
-              iconColor="text-red-600"
-              iconBg="bg-red-50"
-            />
-            <StatCard
-              title="Avg Position"
-              value={stats.avgPosition !== null ? `#${stats.avgPosition}` : "N/A"}
-              subtitle="When mentioned"
-              icon={TrendingUp}
-              iconColor="text-purple-600"
-              iconBg="bg-purple-50"
-            />
-          </div>
-
-          {/* Chart + Provider breakdown */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="card p-6 lg:col-span-2">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                Ranking Overview by AI Model
-              </h3>
-              <RankingChart checks={checks} />
-            </div>
-
-            <div className="card p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                Provider Breakdown
-              </h3>
-              <div className="space-y-4">
-                {stats.byProvider.map((p) => (
-                  <div key={p.provider} className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <ProviderBadge provider={p.provider} />
-                      <span className="text-sm text-gray-500">
-                        {p.ranked}/{p.total} ranked
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-100 rounded-full h-2">
-                      <div
-                        className="h-2 rounded-full transition-all bg-brand-500"
-                        style={{
-                          width: p.total > 0 ? `${(p.ranked / p.total) * 100}%` : "0%",
-                        }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <Link
-                href="/analyze"
-                className="btn-primary w-full mt-6 flex items-center justify-center gap-2"
-              >
-                <Sparkles className="w-4 h-4" />
-                Analyze Website
-              </Link>
-            </div>
-          </div>
-
-          {/* Recent Results */}
-          {recentResults.length > 0 && (
-            <div className="card">
-              <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Recent Quick Checks
-                </h3>
-                <Link
-                  href="/results"
-                  className="text-sm text-brand-600 hover:text-brand-700 font-medium flex items-center gap-1"
-                >
-                  View all <ArrowRight className="w-4 h-4" />
-                </Link>
-              </div>
-              <div className="divide-y divide-gray-100">
-                {recentResults.map((result) => (
-                  <div
-                    key={result.id}
-                    className="px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="text-sm font-medium text-gray-900 truncate">
-                          &ldquo;{result.query}&rdquo;
-                        </p>
-                        <ProviderBadge provider={result.provider} />
-                      </div>
-                      <p className="text-xs text-gray-500">{result.website}</p>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <RankBadge
-                        isRanked={result.isRanked}
-                        position={result.position}
-                      />
-                      <span className="text-xs text-gray-400">
-                        {formatDate(result.checkedAt)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </>
       )}
     </div>
   );
