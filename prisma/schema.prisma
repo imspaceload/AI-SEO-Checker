@@ -8,19 +8,18 @@ datasource db {
 }
 
 model User {
-  id                   String    @id @default(cuid())
-  name                 String?
-  email                String    @unique
-  password             String
-  resetToken           String?   @unique
-  resetTokenExpiry     DateTime?
-  plan                 String    @default("free") // free, starter, professional, enterprise
-  stripeCustomerId     String?   @unique
-  stripeSubscriptionId String?   @unique
-  planExpiresAt        DateTime?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-  prompts              Prompt[]
+  id                      String    @id @default(cuid())
+  name                    String?
+  email                   String    @unique
+  password                String
+  resetToken              String?   @unique
+  resetTokenExpiry        DateTime?
+  plan                    String    @default("free") // free, starter, professional, enterprise
+  paypalSubscriptionId    String?   @unique
+  planExpiresAt           DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  prompts                 Prompt[]
 }
 
 model Prompt {

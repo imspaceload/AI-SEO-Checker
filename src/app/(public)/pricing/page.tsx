@@ -2,15 +2,17 @@
 
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 import {
   Check,
   Zap,
   Crown,
   Building2,
   ArrowRight,
-  Loader2,
   Sparkles,
+  AlertCircle,
 } from "lucide-react";
 import { PLANS, PlanId } from "@/lib/plans";
 
@@ -20,7 +22,10 @@ const planIcons: Record<string, React.ElementType> = {
   enterprise: Building2,
 };
 
-const planColors: Record<string, { border: string; bg: string; badge: string; btn: string }> = {
+const planColors: Record<
+  string,
+  { border: string; bg: string; badge: string; btn: string }
+> = {
   starter: {
     border: "border-brand-500",
     bg: "bg-brand-50",
@@ -41,45 +46,96 @@ const planColors: Record<string, { border: string; bg: string; badge: string; bt
   },
 };
 
+// PayPal plan IDs (NEXT_PUBLIC_ for client access)
+function getPayPalPlanId(plan: string): string | null {
+  switch (plan) {
+    case "starter":
+      return process.env.NEXT_PUBLIC_PAYPAL_STARTER_PLAN_ID || null;
+    case "professional":
+      return process.env.NEXT_PUBLIC_PAYPAL_PROFESSIONAL_PLAN_ID || null;
+    case "enterprise":
+      return process.env.NEXT_PUBLIC_PAYPAL_ENTERPRISE_PLAN_ID || null;
+    default:
+      return null;
+  }
+}
+
+function PayPalSubscribeButton({
+  planId,
+  paypalPlanId,
+}: {
+  planId: string;
+  paypalPlanId: string;
+}) {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <div>
+      <PayPalButtons
+        style={{
+          shape: "rect",
+          color: "blue",
+          layout: "vertical",
+          label: "subscribe",
+        }}
+        createSubscription={(_data, actions) => {
+          return actions.subscription.create({
+            plan_id: paypalPlanId,
+          });
+        }}
+        onApprove={async (data) => {
+          try {
+            const res = await fetch("/api/paypal/activate", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                subscriptionId: data.subscriptionID,
+                plan: planId,
+              }),
+            });
+
+            const result = await res.json();
+
+            if (result.success) {
+              router.push("/dashboard?payment=success&plan=" + planId);
+            } else {
+              setError(result.error || "Failed to activate subscription");
+            }
+          } catch {
+            setError("Something went wrong. Please contact support.");
+          }
+        }}
+        onError={() => {
+          setError("PayPal encountered an error. Please try again.");
+        }}
+      />
+      {error && (
+        <p className="text-xs text-red-600 mt-2 flex items-center gap-1">
+          <AlertCircle className="w-3 h-3" />
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function PricingPage() {
   const { data: session } = useSession();
-  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
   const currentPlan = (session?.user as { plan?: string })?.plan || "free";
+  const [paypalClientId, setPaypalClientId] = useState<string | null>(null);
 
-  const handleSubscribe = async (planId: string) => {
-    if (!session) {
-      window.location.href = "/signup";
-      return;
-    }
-
-    setLoadingPlan(planId);
-
-    try {
-      const res = await fetch("/api/stripe/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan: planId }),
-      });
-
-      const data = await res.json();
-
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        alert(data.error || "Failed to create checkout session. Please ensure Stripe is configured.");
-        setLoadingPlan(null);
-      }
-    } catch {
-      alert("Something went wrong. Please try again.");
-      setLoadingPlan(null);
-    }
-  };
+  useEffect(() => {
+    setPaypalClientId(process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || null);
+  }, []);
 
   const paidPlans = (["starter", "professional", "enterprise"] as PlanId[]).map(
     (id) => PLANS[id]
   );
 
-  return (
+  const hasPayPal = !!paypalClientId;
+
+  const content = (
     <div className="py-20 md:py-28">
       <div className="max-w-7xl mx-auto px-6 lg:px-8">
         {/* Header */}
@@ -102,14 +158,20 @@ export default function PricingPage() {
           <div>
             <h3 className="font-semibold text-gray-900">Free Plan</h3>
             <p className="text-sm text-gray-600 mt-1">
-              10 prompt checks for free. No credit card required. Perfect for trying out the platform.
+              10 prompt checks for free. No credit card required. Perfect for
+              trying out the platform.
             </p>
           </div>
           <div className="shrink-0 ml-6">
             {currentPlan === "free" ? (
-              <span className="badge bg-gray-200 text-gray-700 text-sm px-3 py-1">Current Plan</span>
+              <span className="badge bg-gray-200 text-gray-700 text-sm px-3 py-1">
+                Current Plan
+              </span>
             ) : (
-              <Link href="/signup" className="btn-ghost text-sm border border-gray-300">
+              <Link
+                href="/signup"
+                className="btn-ghost text-sm border border-gray-300"
+              >
                 Get Started
               </Link>
             )}
@@ -122,6 +184,7 @@ export default function PricingPage() {
             const Icon = planIcons[plan.id];
             const colors = planColors[plan.id];
             const isCurrent = currentPlan === plan.id;
+            const paypalPlanId = getPayPalPlanId(plan.id);
 
             return (
               <div
@@ -140,7 +203,9 @@ export default function PricingPage() {
 
                 {/* Plan Header */}
                 <div className="mb-6">
-                  <div className={`w-12 h-12 ${colors.bg} rounded-xl flex items-center justify-center mb-4`}>
+                  <div
+                    className={`w-12 h-12 ${colors.bg} rounded-xl flex items-center justify-center mb-4`}
+                  >
                     <Icon className="w-6 h-6 text-gray-700" />
                   </div>
                   <h3 className="text-xl font-bold text-gray-900">
@@ -162,14 +227,17 @@ export default function PricingPage() {
                 {/* Features */}
                 <ul className="space-y-3 flex-1 mb-8">
                   {plan.features.map((feature) => (
-                    <li key={feature} className="flex items-start gap-3 text-sm text-gray-700">
+                    <li
+                      key={feature}
+                      className="flex items-start gap-3 text-sm text-gray-700"
+                    >
                       <Check className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
                       {feature}
                     </li>
                   ))}
                 </ul>
 
-                {/* CTA Button */}
+                {/* CTA / PayPal Button */}
                 {isCurrent ? (
                   <button
                     disabled
@@ -177,31 +245,32 @@ export default function PricingPage() {
                   >
                     Current Plan
                   </button>
-                ) : (
-                  <button
-                    onClick={() => handleSubscribe(plan.id)}
-                    disabled={loadingPlan !== null}
-                    className={`w-full py-3 rounded-lg font-semibold text-sm transition-all flex items-center justify-center gap-2 ${colors.btn} disabled:opacity-50`}
+                ) : !session ? (
+                  <Link
+                    href="/signup"
+                    className={`w-full py-3 rounded-lg font-semibold text-sm transition-all flex items-center justify-center gap-2 ${colors.btn}`}
                   >
-                    {loadingPlan === plan.id ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Redirecting...
-                      </>
-                    ) : (
-                      <>
-                        Get {plan.name}
-                        <ArrowRight className="w-4 h-4" />
-                      </>
-                    )}
-                  </button>
+                    Sign Up to Subscribe
+                    <ArrowRight className="w-4 h-4" />
+                  </Link>
+                ) : hasPayPal && paypalPlanId ? (
+                  <PayPalSubscribeButton
+                    planId={plan.id}
+                    paypalPlanId={paypalPlanId}
+                  />
+                ) : (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-center">
+                    <p className="text-xs text-amber-700">
+                      Payment not configured yet. Contact admin.
+                    </p>
+                  </div>
                 )}
               </div>
             );
           })}
         </div>
 
-        {/* FAQ / Extra Info */}
+        {/* FAQ */}
         <div className="max-w-3xl mx-auto mt-20">
           <h2 className="text-2xl font-bold text-gray-900 text-center mb-10">
             Frequently Asked Questions
@@ -222,16 +291,21 @@ export default function PricingPage() {
               },
               {
                 q: "Can I upgrade or downgrade at any time?",
-                a: "Yes! You can upgrade your plan at any time. Changes take effect immediately. Contact support for downgrades.",
+                a: "Yes! You can upgrade your plan at any time. Changes take effect immediately. Cancel anytime from your PayPal account.",
               },
               {
-                q: "Is there a free trial for paid plans?",
-                a: "The free plan with 10 prompt checks serves as your trial. Once you see the value, upgrade to any paid plan.",
+                q: "How does payment work?",
+                a: "We use PayPal for secure payments. You can pay with your PayPal balance, linked bank account, or credit/debit card through PayPal.",
               },
             ].map((faq) => (
-              <div key={faq.q} className="bg-gray-50 rounded-xl p-6 border border-gray-200">
+              <div
+                key={faq.q}
+                className="bg-gray-50 rounded-xl p-6 border border-gray-200"
+              >
                 <h3 className="font-semibold text-gray-900">{faq.q}</h3>
-                <p className="text-gray-600 text-sm mt-2 leading-relaxed">{faq.a}</p>
+                <p className="text-gray-600 text-sm mt-2 leading-relaxed">
+                  {faq.a}
+                </p>
               </div>
             ))}
           </div>
@@ -241,7 +315,10 @@ export default function PricingPage() {
         <div className="text-center mt-16">
           <p className="text-gray-600">
             Not sure which plan is right for you?{" "}
-            <Link href="/signup" className="text-brand-700 font-semibold hover:text-brand-800">
+            <Link
+              href="/signup"
+              className="text-brand-700 font-semibold hover:text-brand-800"
+            >
               Start free and upgrade later
             </Link>
           </p>
@@ -249,4 +326,20 @@ export default function PricingPage() {
       </div>
     </div>
   );
+
+  if (hasPayPal) {
+    return (
+      <PayPalScriptProvider
+        options={{
+          clientId: paypalClientId!,
+          vault: true,
+          intent: "subscription",
+        }}
+      >
+        {content}
+      </PayPalScriptProvider>
+    );
+  }
+
+  return content;
 }
