@@ -8,7 +8,7 @@ import {
   KeywordGroup,
   KeywordRankResult,
 } from "@/types";
-import { generateId, getProviderName, getProviderBgClass } from "@/lib/utils";
+import { generateId, getProviderName } from "@/lib/utils";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
 import ProviderBadge from "@/components/ui/ProviderBadge";
 import {
@@ -16,9 +16,6 @@ import {
   Search,
   Sparkles,
   Building2,
-  Users,
-  MapPin,
-  Target,
   Trophy,
   ChevronDown,
   ChevronUp,
@@ -26,7 +23,6 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
-  Swords,
 } from "lucide-react";
 
 type Step = "input" | "analyzing" | "review" | "keywords" | "ranking" | "results";
@@ -306,130 +302,88 @@ export default function AnalyzePage() {
 
       {/* Step 2: Review Analysis */}
       {step === "review" && analysis && (
-        <div className="space-y-6">
-          <div className="card p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-50 rounded-lg">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    Website Analysis Complete
-                  </h3>
-                  <p className="text-sm text-gray-500">
-                    Review the information below, then generate keywords
-                  </p>
-                </div>
-              </div>
+        <div className="card p-6">
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              {error}
             </div>
+          )}
 
-            {error && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                {error}
-              </div>
-            )}
-
-            {/* Business Info */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="space-y-4">
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Building2 className="w-4 h-4 text-gray-600" />
-                    <h4 className="text-sm font-semibold text-gray-700">Business</h4>
-                  </div>
-                  <p className="text-base font-bold text-gray-900">{analysis.businessName}</p>
-                  <p className="text-sm text-gray-600 mt-1">{analysis.description}</p>
-                </div>
-
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Target className="w-4 h-4 text-gray-600" />
-                    <h4 className="text-sm font-semibold text-gray-700">Products / Services</h4>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {analysis.products.map((p, i) => (
-                      <span key={i} className="badge bg-brand-50 text-brand-700">
-                        {p}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <MapPin className="w-4 h-4 text-gray-600" />
-                    <h4 className="text-sm font-semibold text-gray-700">Target Market</h4>
-                  </div>
-                  <div className="space-y-2">
-                    <div>
-                      <p className="text-xs text-gray-500">Countries</p>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {analysis.targetMarket.countries.map((c, i) => (
-                          <span key={i} className="badge bg-green-50 text-green-700">{c}</span>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Industries</p>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {analysis.targetMarket.industries.map((ind, i) => (
-                          <span key={i} className="badge bg-purple-50 text-purple-700">{ind}</span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Users className="w-4 h-4 text-gray-600" />
-                    <h4 className="text-sm font-semibold text-gray-700">Ideal Customer Profile</h4>
-                  </div>
-                  <p className="text-sm text-gray-700 font-medium">{analysis.icp.persona}</p>
-                  <p className="text-xs text-gray-500 mt-1">{analysis.icp.demographics}</p>
-                  <div className="mt-3">
-                    <p className="text-xs text-gray-500 mb-1">Pain Points</p>
-                    <ul className="space-y-1">
-                      {analysis.icp.painPoints.map((pp, i) => (
-                        <li key={i} className="text-sm text-gray-600 flex items-start gap-2">
-                          <span className="text-red-400 mt-0.5">&#x2022;</span>
-                          {pp}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Swords className="w-4 h-4 text-gray-600" />
-                    <h4 className="text-sm font-semibold text-gray-700">Competitors Found</h4>
-                  </div>
-                  <div className="space-y-2">
-                    {analysis.competitors.map((comp, i) => (
-                      <div key={i} className="flex items-center gap-2 text-sm">
-                        <span className="w-5 h-5 bg-red-100 text-red-600 rounded-full flex items-center justify-center text-xs font-medium">
-                          {i + 1}
-                        </span>
-                        <span className="text-gray-700">{comp}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+          {/* Header: Business name + description */}
+          <div className="flex items-start gap-3 mb-6">
+            <div className="p-2 bg-brand-50 rounded-lg shrink-0">
+              <Building2 className="w-5 h-5 text-brand-600" />
             </div>
-
-            <button
-              onClick={handleGenerateKeywords}
-              className="btn-primary w-full py-3 mt-6 flex items-center justify-center gap-2 text-base"
-            >
-              Generate Long-Tail Keywords
-              <ArrowRight className="w-5 h-5" />
-            </button>
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">{analysis.businessName}</h3>
+              <p className="text-sm text-gray-500 mt-0.5 leading-relaxed">{analysis.description}</p>
+            </div>
           </div>
+
+          {/* Compact info rows */}
+          <div className="border-t border-gray-100 divide-y divide-gray-100">
+            {/* Products */}
+            <div className="py-4 flex flex-wrap items-start gap-x-4 gap-y-1">
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide w-24 shrink-0 pt-0.5">Products</span>
+              <div className="flex flex-wrap gap-1.5">
+                {analysis.products.map((p, i) => (
+                  <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 font-medium">{p}</span>
+                ))}
+              </div>
+            </div>
+
+            {/* ICP */}
+            <div className="py-4 flex flex-wrap items-start gap-x-4 gap-y-1">
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide w-24 shrink-0 pt-0.5">ICP</span>
+              <div className="text-sm text-gray-700">
+                <p>{analysis.icp.persona}</p>
+                {analysis.icp.demographics && (
+                  <p className="text-xs text-gray-400 mt-1">{analysis.icp.demographics}</p>
+                )}
+              </div>
+            </div>
+
+            {/* Pain Points */}
+            <div className="py-4 flex flex-wrap items-start gap-x-4 gap-y-1">
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide w-24 shrink-0 pt-0.5">Pain Points</span>
+              <div className="flex flex-wrap gap-1.5">
+                {analysis.icp.painPoints.map((pp, i) => (
+                  <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-600 font-medium">{pp}</span>
+                ))}
+              </div>
+            </div>
+
+            {/* Market */}
+            <div className="py-4 flex flex-wrap items-start gap-x-4 gap-y-1">
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide w-24 shrink-0 pt-0.5">Market</span>
+              <div className="flex flex-wrap gap-1.5">
+                {analysis.targetMarket.countries.map((c, i) => (
+                  <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700 font-medium">{c}</span>
+                ))}
+                {analysis.targetMarket.industries.map((ind, i) => (
+                  <span key={`ind-${i}`} className="text-xs px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 font-medium">{ind}</span>
+                ))}
+              </div>
+            </div>
+
+            {/* Competitors */}
+            <div className="py-4 flex flex-wrap items-start gap-x-4 gap-y-1">
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide w-24 shrink-0 pt-0.5">Competitors</span>
+              <div className="flex flex-wrap gap-1.5">
+                {analysis.competitors.map((comp, i) => (
+                  <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 font-medium">{comp}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={handleGenerateKeywords}
+            className="btn-primary w-full py-3 mt-4 flex items-center justify-center gap-2 text-base"
+          >
+            Generate Long-Tail Keywords
+            <ArrowRight className="w-5 h-5" />
+          </button>
         </div>
       )}
 
