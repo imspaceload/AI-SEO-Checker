@@ -31,9 +31,9 @@ export default function Sidebar() {
           </div>
           <div>
             <h1 className="font-bold text-gray-900 text-lg leading-tight">
-              AI SEO
+              Organic SEO
             </h1>
-            <p className="text-xs text-gray-500 -mt-0.5">Rank Checker</p>
+            <p className="text-xs text-gray-500 -mt-0.5">AI Citation Checker</p>
           </div>
         </Link>
       </div>

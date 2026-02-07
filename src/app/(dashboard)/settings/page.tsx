@@ -167,7 +167,7 @@ export default function SettingsPage() {
         </div>
         <div className="space-y-3 text-sm text-gray-600">
           <p>
-            AI SEO Rank Checker helps you understand how your website appears in
+            Organic SEO helps you understand how your website appears in
             AI-powered search responses from ChatGPT, Perplexity, and Gemini.
           </p>
           <p>

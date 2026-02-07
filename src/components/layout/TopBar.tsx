@@ -13,7 +13,7 @@ const pageTitles: Record<string, string> = {
 
 export default function TopBar() {
   const pathname = usePathname();
-  const title = pageTitles[pathname] || "AI SEO Checker";
+  const title = pageTitles[pathname] || "Organic SEO";
 
   return (
     <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 sticky top-0 z-20">
