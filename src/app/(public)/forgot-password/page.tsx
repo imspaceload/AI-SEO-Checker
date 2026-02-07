@@ -9,17 +9,13 @@ import {
   ArrowLeft,
   Loader2,
   CheckCircle2,
-  Copy,
-  ExternalLink,
 } from "lucide-react";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [resetLink, setResetLink] = useState("");
   const [sent, setSent] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,22 +38,11 @@ export default function ForgotPasswordPage() {
       }
 
       setSent(true);
-
-      if (data.resetToken) {
-        const origin = window.location.origin;
-        setResetLink(`${origin}/reset-password?token=${data.resetToken}`);
-      }
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
-  };
-
-  const copyLink = () => {
-    navigator.clipboard.writeText(resetLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -76,7 +61,7 @@ export default function ForgotPasswordPage() {
             Reset your password
           </h1>
           <p className="text-gray-600 mt-1">
-            Enter your email and we&apos;ll generate a reset link
+            Enter your email and we&apos;ll send you a reset link
           </p>
         </div>
 
@@ -114,11 +99,11 @@ export default function ForgotPasswordPage() {
                 {loading ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
-                    Generating reset link...
+                    Sending reset link...
                   </>
                 ) : (
                   <>
-                    Generate Reset Link
+                    Send Reset Link
                     <ArrowRight className="w-5 h-5" />
                   </>
                 )}
@@ -131,41 +116,27 @@ export default function ForgotPasswordPage() {
               <CheckCircle2 className="w-5 h-5 text-emerald-600 mt-0.5 shrink-0" />
               <div>
                 <p className="text-sm font-medium text-emerald-800">
-                  Reset link generated!
+                  Check your email
                 </p>
                 <p className="text-sm text-emerald-700 mt-0.5">
-                  Use the link below to set a new password. It expires in 1 hour.
+                  We&apos;ve sent a password reset link to <strong>{email}</strong>.
+                  Check your inbox and click the link to reset your password.
                 </p>
               </div>
             </div>
 
-            {resetLink && (
-              <div className="space-y-3">
-                <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
-                  <p className="text-xs text-gray-500 mb-2">Your reset link:</p>
-                  <p className="text-sm text-gray-800 break-all font-mono">
-                    {resetLink}
-                  </p>
-                </div>
-
-                <div className="flex gap-3">
-                  <button
-                    onClick={copyLink}
-                    className="btn-ghost flex-1 flex items-center justify-center gap-2 text-sm border border-gray-200"
-                  >
-                    <Copy className="w-4 h-4" />
-                    {copied ? "Copied!" : "Copy Link"}
-                  </button>
-                  <Link
-                    href={resetLink}
-                    className="btn-primary flex-1 flex items-center justify-center gap-2 text-sm"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    Reset Password
-                  </Link>
-                </div>
-              </div>
-            )}
+            <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+              <p className="text-xs text-gray-500">
+                Didn&apos;t receive the email? Check your spam folder or{" "}
+                <button
+                  onClick={() => setSent(false)}
+                  className="text-brand-600 hover:text-brand-700 font-medium"
+                >
+                  try again
+                </button>
+                . The link expires in 1 hour.
+              </p>
+            </div>
           </div>
         )}
 
