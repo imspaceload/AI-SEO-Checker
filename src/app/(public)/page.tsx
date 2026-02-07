@@ -423,9 +423,15 @@ export default function LandingPage() {
             </Link>
           </div>
           <p className="mt-6 text-sm text-brand-200">
-            Free to start &middot; No credit card required &middot; Check
-            unlimited keywords
+            Free to start &middot; No credit card required &middot; 10 free
+            prompt checks
           </p>
+          <Link
+            href="/pricing"
+            className="mt-4 inline-block text-sm text-brand-200 hover:text-white underline underline-offset-4"
+          >
+            View all pricing plans
+          </Link>
         </div>
       </section>
     </>

@@ -41,6 +41,7 @@ export const authOptions: NextAuthOptions = {
           id: user.id,
           name: user.name,
           email: user.email,
+          plan: user.plan,
         };
       },
     }),
@@ -52,15 +53,28 @@ export const authOptions: NextAuthOptions = {
     signIn: "/login",
   },
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.id = user.id;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        token.plan = (user as any).plan || "free";
+      }
+      // Refresh plan from DB when session is updated (e.g. after payment)
+      if (trigger === "update" && token.id) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          select: { plan: true },
+        });
+        if (dbUser) {
+          token.plan = dbUser.plan;
+        }
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as { id?: string }).id = token.id as string;
+        (session.user as { id?: string; plan?: string }).id = token.id as string;
+        (session.user as { id?: string; plan?: string }).plan = token.plan as string;
       }
       return session;
     },

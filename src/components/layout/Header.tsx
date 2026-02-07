@@ -8,6 +8,7 @@ const navLinks = [
   { href: "/#features", label: "Features" },
   { href: "/#aeo-vs-seo", label: "AEO vs SEO" },
   { href: "/#how-it-works", label: "How It Works" },
+  { href: "/pricing", label: "Pricing" },
 ];
 
 export default function Header() {

@@ -1,5 +1,8 @@
 "use client";
 
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { useStore } from "@/store/useStore";
 import { computeStats, formatDate } from "@/lib/utils";
 import StatCard from "@/components/ui/StatCard";
@@ -16,13 +19,52 @@ import {
   Sparkles,
   Globe,
   Swords,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 
-export default function DashboardPage() {
+interface UsageInfo {
+  plan: string;
+  promptCount: number;
+  promptLimit: number;
+  isMonthly: boolean;
+  canCheck: boolean;
+  remaining: number;
+}
+
+function DashboardContent() {
   const checks = useStore((s) => s.checks);
   const analyses = useStore((s) => s.analyses);
   const stats = computeStats(checks);
+  const [usage, setUsage] = useState<UsageInfo | null>(null);
+  const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const searchParams = useSearchParams();
+  const { update } = useSession();
+
+  useEffect(() => {
+    fetch("/api/user/usage")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data) setUsage(data); })
+      .catch(() => {});
+  }, []);
+
+  // Handle payment success redirect
+  useEffect(() => {
+    if (searchParams.get("payment") === "success") {
+      setPaymentSuccess(true);
+      // Refresh session to pick up new plan
+      update();
+      // Remove query param from URL
+      window.history.replaceState({}, "", "/dashboard");
+      // Refresh usage data
+      setTimeout(() => {
+        fetch("/api/user/usage")
+          .then((r) => r.ok ? r.json() : null)
+          .then((data) => { if (data) setUsage(data); })
+          .catch(() => {});
+      }, 1000);
+    }
+  }, [searchParams, update]);
 
   const recentResults = checks
     .flatMap((c) =>
@@ -38,6 +80,84 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
+      {/* Payment Success Banner */}
+      {paymentSuccess && (
+        <div className="card p-4 bg-emerald-50 border-emerald-200 flex items-center gap-3">
+          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-emerald-800">
+              Payment successful! Your plan has been upgraded.
+            </p>
+            <p className="text-xs text-emerald-600 mt-0.5">
+              You now have access to more prompt checks and features.
+            </p>
+          </div>
+          <button
+            onClick={() => setPaymentSuccess(false)}
+            className="ml-auto text-emerald-600 hover:text-emerald-800 text-sm"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Usage & Plan Widget */}
+      {usage && (
+        <div className="card p-6 bg-gradient-to-r from-brand-50 to-purple-50 border-brand-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Zap className="w-5 h-5 text-brand-600" />
+                <h3 className="font-semibold text-gray-900 capitalize">
+                  {usage.plan === "free" ? "Free Plan" : `${usage.plan} Plan`}
+                </h3>
+              </div>
+              <p className="text-sm text-gray-600">
+                {usage.promptLimit === -1
+                  ? "Unlimited prompt checks"
+                  : `${usage.promptCount} of ${usage.promptLimit} prompt checks used${usage.isMonthly ? " this month" : ""}`}
+              </p>
+              {usage.promptLimit !== -1 && (
+                <div className="mt-3 w-64">
+                  <div className="w-full bg-white/60 rounded-full h-2.5">
+                    <div
+                      className={`h-2.5 rounded-full transition-all ${
+                        !usage.canCheck
+                          ? "bg-red-500"
+                          : usage.promptCount / usage.promptLimit > 0.8
+                          ? "bg-amber-500"
+                          : "bg-brand-600"
+                      }`}
+                      style={{
+                        width: `${Math.min(100, (usage.promptCount / usage.promptLimit) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {usage.remaining === 0
+                      ? "No checks remaining"
+                      : `${usage.remaining} check${usage.remaining !== 1 ? "s" : ""} remaining`}
+                  </p>
+                </div>
+              )}
+            </div>
+            {usage.plan === "free" ? (
+              <Link
+                href="/pricing"
+                className="btn-primary flex items-center gap-2 px-5 py-2.5"
+              >
+                Upgrade Plan
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            ) : (
+              <span className="badge bg-brand-200 text-brand-800 text-sm capitalize px-3 py-1">
+                Active
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Hero CTA - Show when no data */}
       {!hasData && (
         <div className="card p-8 bg-gradient-to-br from-brand-50 to-purple-50 border-brand-200">
@@ -258,5 +378,13 @@ export default function DashboardPage() {
         </>
       )}
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-gray-500">Loading dashboard...</div>}>
+      <DashboardContent />
+    </Suspense>
   );
 }

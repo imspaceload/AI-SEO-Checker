@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useStore } from "@/store/useStore";
 import { AIProvider, RankCheckResult } from "@/types";
-import { generateId, getProviderName, getProviderBgClass } from "@/lib/utils";
+import { generateId, getProviderName } from "@/lib/utils";
 import ProviderBadge from "@/components/ui/ProviderBadge";
 import RankBadge from "@/components/ui/RankBadge";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
+import Link from "next/link";
 import {
   Search,
   Globe,
@@ -15,6 +16,8 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronUp,
+  Lock,
+  ArrowRight,
 } from "lucide-react";
 
 const providers: { id: AIProvider; name: string; description: string }[] = [
@@ -35,6 +38,15 @@ const providers: { id: AIProvider; name: string; description: string }[] = [
   },
 ];
 
+interface UsageInfo {
+  plan: string;
+  promptCount: number;
+  promptLimit: number;
+  isMonthly: boolean;
+  canCheck: boolean;
+  remaining: number;
+}
+
 export default function CheckerPage() {
   const [query, setQuery] = useState("");
   const [website, setWebsite] = useState("");
@@ -46,8 +58,25 @@ export default function CheckerPage() {
   const [currentResults, setCurrentResults] = useState<RankCheckResult[]>([]);
   const [expandedResult, setExpandedResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [usage, setUsage] = useState<UsageInfo | null>(null);
 
   const { addCheck, apiKeys } = useStore();
+
+  const fetchUsage = useCallback(async () => {
+    try {
+      const res = await fetch("/api/user/usage");
+      if (res.ok) {
+        const data = await res.json();
+        setUsage(data);
+      }
+    } catch {
+      // Silently fail - usage info is not critical
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUsage();
+  }, [fetchUsage]);
 
   const toggleProvider = (provider: AIProvider) => {
     setSelectedProviders((prev) =>
@@ -64,11 +93,56 @@ export default function CheckerPage() {
       return;
     }
 
+    // Check limits before making the API call
+    if (usage && !usage.canCheck) {
+      setError(
+        usage.plan === "free"
+          ? "You've used all 10 free prompt checks. Upgrade to continue."
+          : "You've reached your monthly prompt limit. Upgrade your plan for more."
+      );
+      return;
+    }
+
+    // Check if user has enough remaining for selected providers
+    if (
+      usage &&
+      usage.remaining !== -1 &&
+      usage.remaining < selectedProviders.length
+    ) {
+      setError(
+        `You only have ${usage.remaining} prompt check${usage.remaining === 1 ? "" : "s"} remaining. You selected ${selectedProviders.length} AI model${selectedProviders.length === 1 ? "" : "s"}. Reduce your selection or upgrade your plan.`
+      );
+      return;
+    }
+
     setIsChecking(true);
     setError(null);
     setCurrentResults([]);
 
     try {
+      // First, check/save prompts in DB (one per provider)
+      for (const provider of selectedProviders) {
+        const promptRes = await fetch("/api/prompts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query: query.trim(),
+            website: website.trim(),
+            provider,
+          }),
+        });
+
+        if (!promptRes.ok) {
+          const promptData = await promptRes.json();
+          if (promptData.error === "limit_reached") {
+            setError(promptData.message);
+            setIsChecking(false);
+            fetchUsage();
+            return;
+          }
+        }
+      }
+
       const response = await fetch("/api/check-ranking", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -95,6 +169,9 @@ export default function CheckerPage() {
         results: data.results,
         createdAt: new Date().toISOString(),
       });
+
+      // Refresh usage after check
+      fetchUsage();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "An error occurred";
       setError(message);
@@ -106,10 +183,92 @@ export default function CheckerPage() {
   const hasKeys =
     apiKeys.perplexity || apiKeys.rapidapi || apiKeys.google;
 
+  const isLimitReached = usage && !usage.canCheck;
+
   return (
     <div className="max-w-4xl mx-auto space-y-8">
+      {/* Usage Banner */}
+      {usage && (
+        <div
+          className={`card p-4 flex items-center justify-between ${
+            isLimitReached
+              ? "bg-red-50 border-red-200"
+              : usage.remaining !== -1 && usage.remaining <= 3
+              ? "bg-amber-50 border-amber-200"
+              : "bg-gray-50 border-gray-200"
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <div className="text-sm">
+              <span className="font-medium text-gray-900">
+                {usage.promptLimit === -1
+                  ? "Unlimited"
+                  : `${usage.promptCount} / ${usage.promptLimit}`}
+              </span>
+              <span className="text-gray-500 ml-1">
+                prompt checks used
+                {usage.isMonthly ? " this month" : ""}
+              </span>
+            </div>
+            {usage.promptLimit !== -1 && (
+              <div className="w-32 bg-gray-200 rounded-full h-2">
+                <div
+                  className={`h-2 rounded-full transition-all ${
+                    isLimitReached
+                      ? "bg-red-500"
+                      : usage.promptCount / usage.promptLimit > 0.8
+                      ? "bg-amber-500"
+                      : "bg-brand-500"
+                  }`}
+                  style={{
+                    width: `${Math.min(100, (usage.promptCount / usage.promptLimit) * 100)}%`,
+                  }}
+                />
+              </div>
+            )}
+          </div>
+
+          {usage.plan === "free" && (
+            <Link
+              href="/pricing"
+              className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1"
+            >
+              Upgrade
+              <ArrowRight className="w-3 h-3" />
+            </Link>
+          )}
+          {usage.plan !== "free" && (
+            <span className="badge bg-brand-100 text-brand-700 text-xs capitalize">
+              {usage.plan} Plan
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Limit Reached Block */}
+      {isLimitReached && (
+        <div className="card p-8 text-center border-2 border-red-200 bg-red-50">
+          <Lock className="w-12 h-12 text-red-400 mx-auto mb-4" />
+          <h3 className="text-xl font-bold text-gray-900 mb-2">
+            Prompt Limit Reached
+          </h3>
+          <p className="text-gray-600 mb-6 max-w-md mx-auto">
+            {usage?.plan === "free"
+              ? "You've used all 10 free prompt checks. Upgrade to the Starter plan ($49/mo) to unlock 100 checks per month."
+              : `You've reached your ${usage?.promptLimit} monthly prompt limit. Upgrade for more.`}
+          </p>
+          <Link
+            href="/pricing"
+            className="btn-primary inline-flex items-center gap-2 px-6 py-3"
+          >
+            View Pricing Plans
+            <ArrowRight className="w-5 h-5" />
+          </Link>
+        </div>
+      )}
+
       {/* Input Section */}
-      <div className="card p-8">
+      <div className={`card p-8 ${isLimitReached ? "opacity-50 pointer-events-none" : ""}`}>
         <div className="flex items-center gap-3 mb-6">
           <div className="p-2 bg-brand-50 rounded-lg">
             <Sparkles className="w-5 h-5 text-brand-600" />
@@ -212,6 +371,11 @@ export default function CheckerPage() {
                 );
               })}
             </div>
+            {usage && usage.remaining !== -1 && (
+              <p className="text-xs text-gray-400 mt-2">
+                Each model counts as 1 prompt check. Selecting {selectedProviders.length} model{selectedProviders.length !== 1 ? "s" : ""} will use {selectedProviders.length} check{selectedProviders.length !== 1 ? "s" : ""}.
+              </p>
+            )}
           </div>
 
           {error && (
@@ -222,7 +386,7 @@ export default function CheckerPage() {
 
           <button
             onClick={handleCheck}
-            disabled={isChecking || !query.trim() || !website.trim()}
+            disabled={isChecking || !query.trim() || !website.trim() || !!isLimitReached}
             className="btn-primary w-full py-3 flex items-center justify-center gap-2 text-base"
           >
             {isChecking ? (

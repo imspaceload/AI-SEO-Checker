@@ -9,6 +9,7 @@ import {
   History,
   Settings,
   Activity,
+  CreditCard,
 } from "lucide-react";
 
 const navItems = [
@@ -16,6 +17,7 @@ const navItems = [
   { href: "/analyze", label: "Analyze Website", icon: Sparkles },
   { href: "/checker", label: "Quick Check", icon: Search },
   { href: "/results", label: "Results History", icon: History },
+  { href: "/pricing", label: "Pricing", icon: CreditCard },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
