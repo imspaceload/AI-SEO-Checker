@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "DATABASE_URL=\"${DATABASE_URL:-postgresql://dummy:5432/placeholder}\" prisma generate && (prisma db push --skip-generate --accept-data-loss || true) && next build",
-    "postinstall": "DATABASE_URL=\"${DATABASE_URL:-postgresql://dummy:5432/placeholder}\" prisma generate",
+    "build": "bash scripts/build.sh",
+    "postinstall": "DATABASE_URL=\"${DATABASE_URL:-${POSTGRES_PRISMA_URL:-${POSTGRES_URL:-postgresql://dummy:5432/placeholder}}}\" prisma generate",
     "start": "next start",
     "lint": "next lint"
   },
