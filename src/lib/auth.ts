@@ -1,7 +1,11 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
+import * as bcryptModule from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+
+// Handle both CJS and ESM default export
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const bcrypt = (bcryptModule as any).default || bcryptModule;
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -17,7 +21,7 @@ export const authOptions: NextAuthOptions = {
         }
 
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
+          where: { email: credentials.email.toLowerCase().trim() },
         });
 
         if (!user) {

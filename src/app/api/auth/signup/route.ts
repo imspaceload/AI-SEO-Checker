@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
+import * as bcryptModule from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const bcrypt = (bcryptModule as any).default || bcryptModule;
 
 export async function POST(req: NextRequest) {
   try {
@@ -20,8 +23,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const normalizedEmail = email.toLowerCase().trim();
+
     const existingUser = await prisma.user.findUnique({
-      where: { email },
+      where: { email: normalizedEmail },
     });
 
     if (existingUser) {
@@ -31,12 +36,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const hashedPassword = await bcrypt.hash(password, 12);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = await prisma.user.create({
       data: {
         name,
-        email,
+        email: normalizedEmail,
         password: hashedPassword,
       },
     });
