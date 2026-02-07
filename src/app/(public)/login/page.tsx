@@ -2,15 +2,32 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Activity, Mail, Lock, ArrowRight } from "lucide-react";
+import { signIn } from "next-auth/react";
+import { Activity, Mail, Lock, ArrowRight, Loader2 } from "lucide-react";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // For now, redirect to dashboard
+    setError("");
+    setLoading(true);
+
+    const result = await signIn("credentials", {
+      email,
+      password,
+      redirect: false,
+    });
+
+    if (result?.error) {
+      setError(result.error);
+      setLoading(false);
+      return;
+    }
+
     window.location.href = "/dashboard";
   };
 
@@ -31,6 +48,12 @@ export default function LoginPage() {
             Log in to your AI citation checker dashboard
           </p>
         </div>
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            {error}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
@@ -77,10 +100,20 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            className="btn-primary w-full py-3 flex items-center justify-center gap-2 text-base"
+            disabled={loading}
+            className="btn-primary w-full py-3 flex items-center justify-center gap-2 text-base disabled:opacity-50"
           >
-            Log In
-            <ArrowRight className="w-5 h-5" />
+            {loading ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Signing in...
+              </>
+            ) : (
+              <>
+                Log In
+                <ArrowRight className="w-5 h-5" />
+              </>
+            )}
           </button>
         </form>
 

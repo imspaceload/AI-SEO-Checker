@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { signIn } from "next-auth/react";
 import {
   Activity,
   Mail,
@@ -9,17 +10,54 @@ import {
   User,
   ArrowRight,
   CheckCircle2,
+  Loader2,
 } from "lucide-react";
 
 export default function SignupPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // For now, redirect to dashboard
-    window.location.href = "/dashboard";
+    setError("");
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Signup failed");
+        setLoading(false);
+        return;
+      }
+
+      // Auto sign in after successful signup
+      const result = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      });
+
+      if (result?.error) {
+        setError("Account created! Please log in.");
+        setLoading(false);
+        return;
+      }
+
+      window.location.href = "/dashboard";
+    } catch {
+      setError("Something went wrong. Please try again.");
+      setLoading(false);
+    }
   };
 
   return (
@@ -41,6 +79,12 @@ export default function SignupPage() {
             Start tracking your AI search visibility for free
           </p>
         </div>
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            {error}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
@@ -87,8 +131,9 @@ export default function SignupPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Create a strong password"
+                placeholder="Min. 6 characters"
                 className="input pl-11"
+                minLength={6}
                 required
               />
             </div>
@@ -96,10 +141,20 @@ export default function SignupPage() {
 
           <button
             type="submit"
-            className="btn-primary w-full py-3 flex items-center justify-center gap-2 text-base"
+            disabled={loading}
+            className="btn-primary w-full py-3 flex items-center justify-center gap-2 text-base disabled:opacity-50"
           >
-            Create Account
-            <ArrowRight className="w-5 h-5" />
+            {loading ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Creating account...
+              </>
+            ) : (
+              <>
+                Create Account
+                <ArrowRight className="w-5 h-5" />
+              </>
+            )}
           </button>
         </form>
 

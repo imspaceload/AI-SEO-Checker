@@ -1,7 +1,8 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Bell, Search } from "lucide-react";
+import { useSession, signOut } from "next-auth/react";
+import { Bell, Search, LogOut, User } from "lucide-react";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -13,6 +14,7 @@ const pageTitles: Record<string, string> = {
 
 export default function TopBar() {
   const pathname = usePathname();
+  const { data: session } = useSession();
   const title = pageTitles[pathname] || "Organic SEO";
 
   return (
@@ -31,6 +33,29 @@ export default function TopBar() {
         <button className="relative p-2 text-gray-400 hover:text-gray-600 transition-colors">
           <Bell className="w-5 h-5" />
         </button>
+
+        {session?.user && (
+          <div className="flex items-center gap-3 pl-3 border-l border-gray-200">
+            <div className="w-8 h-8 bg-brand-100 rounded-full flex items-center justify-center">
+              <User className="w-4 h-4 text-brand-700" />
+            </div>
+            <div className="hidden md:block">
+              <p className="text-sm font-medium text-gray-900 leading-tight">
+                {session.user.name || session.user.email}
+              </p>
+              {session.user.name && (
+                <p className="text-xs text-gray-500">{session.user.email}</p>
+              )}
+            </div>
+            <button
+              onClick={() => signOut({ callbackUrl: "/login" })}
+              className="p-2 text-gray-400 hover:text-red-600 transition-colors"
+              title="Sign out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );
