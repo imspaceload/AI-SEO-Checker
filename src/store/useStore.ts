@@ -12,6 +12,7 @@ interface AppState {
   addCheck: (check: RankCheck) => void;
   addAnalysis: (analysis: WebsiteAnalysis) => void;
   updateAnalysis: (id: string, updates: Partial<WebsiteAnalysis>) => void;
+  removeAnalysis: (id: string) => void;
   setCurrentAnalysis: (analysis: WebsiteAnalysis | null) => void;
   setApiKeys: (keys: Partial<APIKeyConfig>) => void;
   setLoading: (loading: boolean) => void;
@@ -34,9 +35,10 @@ export const useStore = create<AppState>()(
       addCheck: (check) =>
         set((state) => ({ checks: [check, ...state.checks] })),
 
+      // Single project: replaces all previous analyses
       addAnalysis: (analysis) =>
-        set((state) => ({
-          analyses: [analysis, ...state.analyses],
+        set(() => ({
+          analyses: [analysis],
           currentAnalysis: analysis,
         })),
 
@@ -49,6 +51,13 @@ export const useStore = create<AppState>()(
             state.currentAnalysis?.id === id
               ? { ...state.currentAnalysis, ...updates }
               : state.currentAnalysis,
+        })),
+
+      removeAnalysis: (id) =>
+        set((state) => ({
+          analyses: state.analyses.filter((a) => a.id !== id),
+          currentAnalysis:
+            state.currentAnalysis?.id === id ? null : state.currentAnalysis,
         })),
 
       setCurrentAnalysis: (analysis) => set({ currentAnalysis: analysis }),

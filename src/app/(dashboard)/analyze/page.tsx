@@ -314,11 +314,56 @@ function AnalyzeContent() {
     fetchUsage();
   };
 
-  // Get provider status from stored details
+  // Get provider status from stored details or fallback to rankResults
   const getProviderStatus = (keyword: string, provider: string): "yes" | "no" | "pending" => {
     const detail = keywordDetails[keyword];
-    if (!detail || !detail.providers[provider]) return "pending";
-    return detail.providers[provider].isRanked ? "yes" : "no";
+    if (detail?.providers[provider]) {
+      return detail.providers[provider].isRanked ? "yes" : "no";
+    }
+    // Fallback: check rankResults (loaded from localStorage)
+    if (analysis) {
+      const result = analysis.rankResults.find((r) => r.keyword === keyword);
+      if (result) {
+        try {
+          const map = JSON.parse(result.response);
+          if (typeof map === "object" && provider in map) {
+            return map[provider] ? "yes" : "no";
+          }
+        } catch {
+          // not a JSON map
+        }
+      }
+    }
+    return "pending";
+  };
+
+  // Build a KeywordDetail from rankResults when keywordDetails is missing
+  const getOrBuildDetail = (keyword: string): KeywordDetail | null => {
+    if (keywordDetails[keyword]) return keywordDetails[keyword];
+    if (!analysis) return null;
+    const result = analysis.rankResults.find((r) => r.keyword === keyword);
+    if (!result) return null;
+    try {
+      const providerMap = JSON.parse(result.response);
+      if (typeof providerMap === "object") {
+        return {
+          keyword,
+          providers: Object.fromEntries(
+            Object.entries(providerMap).map(([prov, ranked]) => [
+              prov,
+              {
+                isRanked: !!ranked,
+                response: "",
+                competitorsFound: prov === result.provider ? (result.competitorsFound || []) : [],
+              },
+            ])
+          ),
+        };
+      }
+    } catch {
+      // fallback
+    }
+    return null;
   };
 
   // Generate gap analysis for a keyword using server-side API
@@ -326,7 +371,7 @@ function AnalyzeContent() {
     if (gapAnalysis[keyword] || !analysis) return;
     setLoadingGap(true);
 
-    const detail = keywordDetails[keyword];
+    const detail = keywordDetails[keyword] || getOrBuildDetail(keyword);
     if (!detail) { setLoadingGap(false); return; }
 
     const rankingSummary = Object.entries(detail.providers).map(([prov, data]) => {
@@ -363,13 +408,20 @@ function AnalyzeContent() {
   // Open modal and trigger gap analysis
   const openModal = (keyword: string) => {
     setModalKeyword(keyword);
+    // Ensure keywordDetails has an entry for this keyword
+    if (!keywordDetails[keyword]) {
+      const built = getOrBuildDetail(keyword);
+      if (built) {
+        setKeywordDetails(prev => ({ ...prev, [keyword]: built }));
+      }
+    }
     fetchGapAnalysis(keyword);
   };
 
   const allFlat = getAllKeywordsFlat();
   const visibleLimit = getVisibleLimit();
   const hasLockedKeywords = allFlat.length > visibleLimit;
-  const modalDetail = modalKeyword ? keywordDetails[modalKeyword] : null;
+  const modalDetail = modalKeyword ? (keywordDetails[modalKeyword] || getOrBuildDetail(modalKeyword)) : null;
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
@@ -570,7 +622,7 @@ function AnalyzeContent() {
               <div className="divide-y divide-gray-100">
                 {allFlat.map((item, idx) => {
                   const isLocked = idx >= visibleLimit;
-                  const hasResult = !!keywordDetails[item.keyword];
+                  const hasResult = !!keywordDetails[item.keyword] || !!analysis.rankResults.find((r) => r.keyword === item.keyword);
 
                   return (
                     <div

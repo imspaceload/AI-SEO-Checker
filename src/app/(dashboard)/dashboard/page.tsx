@@ -28,11 +28,31 @@ interface UsageInfo {
 }
 
 function DashboardContent() {
-  const analyses = useStore((s) => s.analyses);
+  const allAnalyses = useStore((s) => s.analyses);
+  const removeAnalysis = useStore((s) => s.removeAnalysis);
   const [usage, setUsage] = useState<UsageInfo | null>(null);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const searchParams = useSearchParams();
   const { update } = useSession();
+
+  // Filter: only show analyses that have a valid businessName (not failed/empty)
+  const analyses = allAnalyses.filter(
+    (a) => a.businessName && a.businessName !== "Unable to determine - website not accessible"
+      && !a.businessName.toLowerCase().startsWith("unable to")
+  );
+
+  // Auto-remove broken entries
+  useEffect(() => {
+    allAnalyses.forEach((a) => {
+      if (
+        !a.businessName ||
+        a.businessName.toLowerCase().startsWith("unable to") ||
+        a.status === "error"
+      ) {
+        removeAnalysis(a.id);
+      }
+    });
+  }, [allAnalyses, removeAnalysis]);
 
   useEffect(() => {
     fetch("/api/user/usage")
