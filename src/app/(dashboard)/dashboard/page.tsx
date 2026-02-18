@@ -220,9 +220,10 @@ function DashboardContent() {
               const keywordCount = a.keywords.reduce((acc, g) => acc + g.keywords.length, 0);
 
               return (
-                <div
+                <Link
                   key={a.id}
-                  className="card p-5 hover:shadow-md transition-shadow"
+                  href={`/analyze?id=${a.id}`}
+                  className="card p-5 hover:shadow-md transition-shadow block"
                 >
                   <div className="flex items-start justify-between">
                     <div className="min-w-0 flex-1">
@@ -336,7 +337,7 @@ function DashboardContent() {
                       })}
                     </div>
                   )}
-                </div>
+                </Link>
               );
             })}
           </div>

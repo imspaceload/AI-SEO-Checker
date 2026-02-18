@@ -13,7 +13,6 @@ import {
   Globe,
   Sparkles,
   CheckCircle2,
-  AlertCircle,
   ChevronDown,
   ChevronUp,
   Lock,
@@ -180,9 +179,6 @@ export default function CheckerPage() {
     }
   };
 
-  const hasKeys =
-    apiKeys.perplexity || apiKeys.rapidapi || apiKeys.google;
-
   const isLimitReached = usage && !usage.canCheck;
 
   return (
@@ -282,25 +278,6 @@ export default function CheckerPage() {
             </p>
           </div>
         </div>
-
-        {!hasKeys && (
-          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
-            <div>
-              <p className="text-sm font-medium text-amber-800">
-                API Keys Required
-              </p>
-              <p className="text-sm text-amber-700 mt-0.5">
-                Configure your API keys in{" "}
-                <a href="/settings" className="underline font-medium">
-                  Settings
-                </a>{" "}
-                to check rankings. You can also set them as environment
-                variables.
-              </p>
-            </div>
-          </div>
-        )}
 
         <div className="space-y-4">
           <div>

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useStore } from "@/store/useStore";
 import {
   AIProvider,
@@ -22,8 +22,9 @@ import {
   Loader2,
   CheckCircle2,
   XCircle,
-  ChevronDown,
-  ChevronUp,
+  X,
+  Lightbulb,
+  TrendingUp,
 } from "lucide-react";
 
 type Step = "input" | "analyzing" | "review" | "keywords" | "ranking" | "results";
@@ -36,20 +37,78 @@ interface UsageData {
   remaining: number;
 }
 
-export default function AnalyzePage() {
+// Per-keyword detail: stores ranking info per provider
+interface KeywordDetail {
+  keyword: string;
+  providers: Record<string, {
+    isRanked: boolean;
+    response: string;
+    competitorsFound: { name: string; url: string; position: number | null; snippet: string }[];
+  }>;
+}
+
+function AnalyzeContent() {
   const [step, setStep] = useState<Step>("input");
   const [url, setUrl] = useState("");
   const [analysis, setAnalysis] = useState<WebsiteAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [usage, setUsage] = useState<UsageData | null>(null);
   const [rankingProgress, setRankingProgress] = useState({ current: 0, total: 0, keyword: "" });
-  const [expandedKeyword, setExpandedKeyword] = useState<string | null>(null);
+  const [keywordDetails, setKeywordDetails] = useState<Record<string, KeywordDetail>>({});
+  const [modalKeyword, setModalKeyword] = useState<string | null>(null);
+  const [gapAnalysis, setGapAnalysis] = useState<Record<string, string>>({});
+  const [loadingGap, setLoadingGap] = useState(false);
 
   const { data: session } = useSession();
   const router = useRouter();
-  const { apiKeys, addAnalysis, updateAnalysis } = useStore();
+  const searchParams = useSearchParams();
+  const { apiKeys, analyses, addAnalysis, updateAnalysis } = useStore();
 
-  // Fetch user's plan/usage
+  // Load saved analysis from store when ?id= param is present
+  useEffect(() => {
+    const id = searchParams.get("id");
+    if (id && !analysis) {
+      const saved = analyses.find((a) => a.id === id);
+      if (saved) {
+        setAnalysis(saved);
+        setUrl(saved.url);
+        // Determine the right step based on status
+        if (saved.status === "complete" && saved.rankResults.length > 0) {
+          // Rebuild keywordDetails from rankResults for the modal
+          const details: Record<string, KeywordDetail> = {};
+          saved.rankResults.forEach((r) => {
+            try {
+              const providerMap = JSON.parse(r.response);
+              if (typeof providerMap === "object") {
+                details[r.keyword] = {
+                  keyword: r.keyword,
+                  providers: Object.fromEntries(
+                    Object.entries(providerMap).map(([prov, ranked]) => [
+                      prov,
+                      {
+                        isRanked: !!ranked,
+                        response: "",
+                        competitorsFound: prov === r.provider ? (r.competitorsFound || []) : [],
+                      },
+                    ])
+                  ),
+                };
+              }
+            } catch {
+              // legacy format
+            }
+          });
+          setKeywordDetails(details);
+          setStep("results");
+        } else if (saved.keywords.length > 0) {
+          setStep("ranking");
+        } else if (saved.businessName) {
+          setStep("review");
+        }
+      }
+    }
+  }, [searchParams, analyses, analysis]);
+
   const fetchUsage = useCallback(async () => {
     try {
       const res = await fetch("/api/user/usage");
@@ -69,13 +128,11 @@ export default function AnalyzePage() {
   const planLimit = usage?.promptLimit ?? 10;
   const isFree = (usage?.plan || "free") === "free";
 
-  // How many keywords this user can see
   const getVisibleLimit = () => {
-    if (!isFree && planLimit === -1) return Infinity; // unlimited
+    if (!isFree && planLimit === -1) return Infinity;
     return planLimit;
   };
 
-  // Flatten all keywords with their categories
   const getAllKeywordsFlat = () => {
     if (!analysis) return [];
     const flat: { keyword: string; category: string }[] = [];
@@ -177,7 +234,7 @@ export default function AnalyzePage() {
     }
   };
 
-  // Step 3: Check Rankings for visible keywords only
+  // Step 3: Check Rankings
   const handleCheckRankings = async () => {
     if (!analysis || analysis.keywords.length === 0) return;
     setError(null);
@@ -185,18 +242,21 @@ export default function AnalyzePage() {
     const allFlat = getAllKeywordsFlat();
     const limit = getVisibleLimit();
     const visibleKeywords = allFlat.slice(0, limit).map((k) => k.keyword);
+    const providers: AIProvider[] = ["perplexity", "chatgpt", "gemini"];
 
     setRankingProgress({ current: 0, total: visibleKeywords.length, keyword: "" });
 
+    const details: Record<string, KeywordDetail> = {};
     const results: KeywordRankResult[] = [];
-    const providers: AIProvider[] = ["perplexity", "chatgpt", "gemini"];
 
     for (let i = 0; i < visibleKeywords.length; i++) {
       const keyword = visibleKeywords[i];
       setRankingProgress({ current: i + 1, total: visibleKeywords.length, keyword });
 
-      // Check on all 3 providers
-      const providerResults: Record<string, boolean> = {};
+      const detail: KeywordDetail = { keyword, providers: {} };
+      const providerMap: Record<string, boolean> = {};
+      let lastResult: KeywordRankResult | null = null;
+
       for (const provider of providers) {
         try {
           const res = await fetch("/api/check-competitors", {
@@ -213,47 +273,35 @@ export default function AnalyzePage() {
 
           if (res.ok) {
             const data = await res.json();
-            providerResults[provider] = data.isYouRanked;
-            // Store result for the last provider checked
-            if (provider === providers[providers.length - 1]) {
-              results.push(data);
-            }
+            providerMap[provider] = data.isYouRanked;
+            detail.providers[provider] = {
+              isRanked: data.isYouRanked,
+              response: data.response,
+              competitorsFound: data.competitorsFound || [],
+            };
+            lastResult = data;
           } else {
-            providerResults[provider] = false;
-            if (provider === providers[providers.length - 1]) {
-              results.push({
-                keyword,
-                provider,
-                competitorsFound: [],
-                yourRank: null,
-                isYouRanked: false,
-                response: "Error checking ranking",
-                checkedAt: new Date().toISOString(),
-              });
-            }
+            providerMap[provider] = false;
+            detail.providers[provider] = { isRanked: false, response: "", competitorsFound: [] };
           }
         } catch {
-          providerResults[provider] = false;
-          if (provider === providers[providers.length - 1]) {
-            results.push({
-              keyword,
-              provider,
-              competitorsFound: [],
-              yourRank: null,
-              isYouRanked: false,
-              response: "Network error",
-              checkedAt: new Date().toISOString(),
-            });
-          }
+          providerMap[provider] = false;
+          detail.providers[provider] = { isRanked: false, response: "", competitorsFound: [] };
         }
       }
 
-      // Store per-provider results in a map we can access
-      results[results.length - 1] = {
-        ...results[results.length - 1],
-        // Encode provider results in response field for display
-        response: JSON.stringify(providerResults),
-      };
+      details[keyword] = detail;
+      setKeywordDetails({ ...details });
+
+      results.push({
+        keyword,
+        provider: "perplexity",
+        competitorsFound: lastResult?.competitorsFound || [],
+        yourRank: lastResult?.yourRank ?? null,
+        isYouRanked: Object.values(providerMap).some(Boolean),
+        response: JSON.stringify(providerMap),
+        checkedAt: new Date().toISOString(),
+      });
 
       const updated = { ...analysis, rankResults: [...results] };
       setAnalysis(updated);
@@ -263,29 +311,65 @@ export default function AnalyzePage() {
     setAnalysis(final);
     updateAnalysis(analysis.id, { rankResults: results, status: "complete" });
     setStep("results");
-    fetchUsage(); // refresh usage after checking
+    fetchUsage();
   };
 
-  // Helper to get ranking status per provider from result
-  const getProviderStatus = (result: KeywordRankResult | undefined, provider: string): "yes" | "no" | "pending" => {
-    if (!result) return "pending";
+  // Get provider status from stored details
+  const getProviderStatus = (keyword: string, provider: string): "yes" | "no" | "pending" => {
+    const detail = keywordDetails[keyword];
+    if (!detail || !detail.providers[provider]) return "pending";
+    return detail.providers[provider].isRanked ? "yes" : "no";
+  };
+
+  // Generate gap analysis for a keyword using server-side API
+  const fetchGapAnalysis = async (keyword: string) => {
+    if (gapAnalysis[keyword] || !analysis) return;
+    setLoadingGap(true);
+
+    const detail = keywordDetails[keyword];
+    if (!detail) { setLoadingGap(false); return; }
+
+    const rankingSummary = Object.entries(detail.providers).map(([prov, data]) => {
+      const provName = prov === "chatgpt" ? "ChatGPT" : prov === "perplexity" ? "Perplexity" : "Gemini";
+      const topCompetitors = data.competitorsFound.slice(0, 5).map(c => c.name).join(", ");
+      return `${provName}: ${data.isRanked ? "You ARE ranked" : "You are NOT ranked"}${topCompetitors ? `. Top competitors: ${topCompetitors}` : ""}`;
+    }).join("\n");
+
     try {
-      const map = JSON.parse(result.response);
-      if (typeof map === "object" && map !== null && provider in map) {
-        return map[provider] ? "yes" : "no";
+      const res = await fetch("/api/gap-analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          keyword,
+          websiteUrl: analysis.url,
+          businessName: analysis.businessName,
+          rankingSummary,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setGapAnalysis(prev => ({ ...prev, [keyword]: data.analysis }));
+      } else {
+        setGapAnalysis(prev => ({ ...prev, [keyword]: "Could not generate gap analysis. Please try again." }));
       }
     } catch {
-      // Fallback for old results
+      setGapAnalysis(prev => ({ ...prev, [keyword]: "Could not generate gap analysis. Please try again." }));
+    } finally {
+      setLoadingGap(false);
     }
-    if (result.provider === provider) {
-      return result.isYouRanked ? "yes" : "no";
-    }
-    return "pending";
+  };
+
+  // Open modal and trigger gap analysis
+  const openModal = (keyword: string) => {
+    setModalKeyword(keyword);
+    fetchGapAnalysis(keyword);
   };
 
   const allFlat = getAllKeywordsFlat();
   const visibleLimit = getVisibleLimit();
   const hasLockedKeywords = allFlat.length > visibleLimit;
+  const modalDetail = modalKeyword ? keywordDetails[modalKeyword] : null;
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
@@ -309,9 +393,7 @@ export default function AnalyzePage() {
               <div className="flex flex-col items-center gap-1">
                 <div
                   className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                    isActive
-                      ? "bg-brand-600 text-white"
-                      : "bg-gray-100 text-gray-400"
+                    isActive ? "bg-brand-600 text-white" : "bg-gray-100 text-gray-400"
                   }`}
                 >
                   {i + 1}
@@ -333,9 +415,7 @@ export default function AnalyzePage() {
               <Sparkles className="w-5 h-5 text-brand-600" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">
-                Analyze Your Website
-              </h3>
+              <h3 className="text-lg font-semibold text-gray-900">Analyze Your Website</h3>
               <p className="text-sm text-gray-500">
                 Enter your URL and our AI will identify your business, ICP, target market, and competitors
               </p>
@@ -343,16 +423,12 @@ export default function AnalyzePage() {
           </div>
 
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-              {error}
-            </div>
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>
           )}
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Website URL
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Website URL</label>
               <div className="relative">
                 <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
@@ -365,7 +441,6 @@ export default function AnalyzePage() {
                 />
               </div>
             </div>
-
             <button
               onClick={handleAnalyze}
               disabled={!url.trim()}
@@ -382,12 +457,9 @@ export default function AnalyzePage() {
       {step === "analyzing" && (
         <div className="card p-12 flex flex-col items-center justify-center">
           <LoadingSpinner size="lg" />
-          <h3 className="text-lg font-semibold text-gray-900 mt-6">
-            Analyzing {url}...
-          </h3>
+          <h3 className="text-lg font-semibold text-gray-900 mt-6">Analyzing {url}...</h3>
           <p className="text-sm text-gray-500 mt-2 text-center max-w-md">
-            AI is crawling your website, reading the content, and analyzing your
-            business, ideal customer profile, target market, and competitors.
+            AI is crawling your website, reading the content, and analyzing your business, ideal customer profile, target market, and competitors.
           </p>
         </div>
       )}
@@ -396,11 +468,8 @@ export default function AnalyzePage() {
       {step === "review" && analysis && (
         <div className="card p-6">
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-              {error}
-            </div>
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>
           )}
-
           <div className="flex items-start gap-3 mb-6">
             <div className="p-2 bg-brand-50 rounded-lg shrink-0">
               <Building2 className="w-5 h-5 text-brand-600" />
@@ -412,54 +481,19 @@ export default function AnalyzePage() {
           </div>
 
           <div className="border-t border-gray-100 divide-y divide-gray-100">
-            <div className="py-4 flex flex-wrap items-start gap-x-4 gap-y-1">
-              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide w-24 shrink-0 pt-0.5">Products</span>
-              <div className="flex flex-wrap gap-1.5">
-                {analysis.products.map((p, i) => (
-                  <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 font-medium">{p}</span>
-                ))}
-              </div>
-            </div>
-
-            <div className="py-4 flex flex-wrap items-start gap-x-4 gap-y-1">
-              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide w-24 shrink-0 pt-0.5">ICP</span>
+            <InfoRow label="Products">{analysis.products.map((p, i) => <Tag key={i} color="brand">{p}</Tag>)}</InfoRow>
+            <InfoRow label="ICP">
               <div className="text-sm text-gray-700">
                 <p>{analysis.icp.persona}</p>
-                {analysis.icp.demographics && (
-                  <p className="text-xs text-gray-400 mt-1">{analysis.icp.demographics}</p>
-                )}
+                {analysis.icp.demographics && <p className="text-xs text-gray-400 mt-1">{analysis.icp.demographics}</p>}
               </div>
-            </div>
-
-            <div className="py-4 flex flex-wrap items-start gap-x-4 gap-y-1">
-              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide w-24 shrink-0 pt-0.5">Pain Points</span>
-              <div className="flex flex-wrap gap-1.5">
-                {analysis.icp.painPoints.map((pp, i) => (
-                  <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-600 font-medium">{pp}</span>
-                ))}
-              </div>
-            </div>
-
-            <div className="py-4 flex flex-wrap items-start gap-x-4 gap-y-1">
-              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide w-24 shrink-0 pt-0.5">Market</span>
-              <div className="flex flex-wrap gap-1.5">
-                {analysis.targetMarket.countries.map((c, i) => (
-                  <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700 font-medium">{c}</span>
-                ))}
-                {analysis.targetMarket.industries.map((ind, i) => (
-                  <span key={`ind-${i}`} className="text-xs px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 font-medium">{ind}</span>
-                ))}
-              </div>
-            </div>
-
-            <div className="py-4 flex flex-wrap items-start gap-x-4 gap-y-1">
-              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide w-24 shrink-0 pt-0.5">Competitors</span>
-              <div className="flex flex-wrap gap-1.5">
-                {analysis.competitors.map((comp, i) => (
-                  <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 font-medium">{comp}</span>
-                ))}
-              </div>
-            </div>
+            </InfoRow>
+            <InfoRow label="Pain Points">{analysis.icp.painPoints.map((pp, i) => <Tag key={i} color="red">{pp}</Tag>)}</InfoRow>
+            <InfoRow label="Market">
+              {analysis.targetMarket.countries.map((c, i) => <Tag key={i} color="green">{c}</Tag>)}
+              {analysis.targetMarket.industries.map((ind, i) => <Tag key={`i${i}`} color="purple">{ind}</Tag>)}
+            </InfoRow>
+            <InfoRow label="Competitors">{analysis.competitors.map((c, i) => <Tag key={i} color="gray">{c}</Tag>)}</InfoRow>
           </div>
 
           <button
@@ -476,9 +510,7 @@ export default function AnalyzePage() {
       {step === "keywords" && (
         <div className="card p-12 flex flex-col items-center justify-center">
           <LoadingSpinner size="lg" />
-          <h3 className="text-lg font-semibold text-gray-900 mt-6">
-            Generating Long-Tail Keywords...
-          </h3>
+          <h3 className="text-lg font-semibold text-gray-900 mt-6">Generating Long-Tail Keywords...</h3>
           <p className="text-sm text-gray-500 mt-2 text-center max-w-md">
             Creating AI-optimized prompts based on your business profile, ICP, and competitors.
           </p>
@@ -488,12 +520,9 @@ export default function AnalyzePage() {
       {/* Step 3: Keywords Table + Rankings */}
       {(step === "ranking" || step === "results") && analysis && (
         <div className="space-y-6">
-          {/* Header with total and plan info */}
           <div className="card p-6">
             <div className="flex items-center justify-between mb-1">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Long-Tail Keywords
-              </h3>
+              <h3 className="text-lg font-semibold text-gray-900">Long-Tail Keywords</h3>
               <span className="text-sm text-gray-500">
                 Total prompts: {Math.min(allFlat.length, visibleLimit === Infinity ? allFlat.length : visibleLimit)} / {allFlat.length}
                 {usage && (
@@ -505,7 +534,7 @@ export default function AnalyzePage() {
             </div>
             <p className="text-sm text-gray-500 mb-6">
               {allFlat.length} keywords across {analysis.keywords.length} categories.
-              {step === "ranking" && " Click below to check rankings on all AI models."}
+              {step === "ranking" && rankingProgress.total === 0 && " Click below to check rankings on all AI models."}
             </p>
 
             {/* Ranking progress */}
@@ -528,120 +557,56 @@ export default function AnalyzePage() {
 
             {/* Keywords Table */}
             <div className="border border-gray-200 rounded-lg overflow-hidden">
-              {/* Table Header */}
               <div className="bg-gray-900 text-white">
-                <div className="grid grid-cols-[50px_1fr_150px_90px_90px_90px] items-center px-4 py-3 text-xs font-semibold uppercase tracking-wide">
+                <div className="grid grid-cols-[40px_1fr_90px_90px_90px] items-center px-4 py-3 text-xs font-semibold uppercase tracking-wide">
                   <span>#</span>
                   <span>Prompt</span>
-                  <span>Category</span>
                   <span className="text-center">Perplexity</span>
                   <span className="text-center">ChatGPT</span>
                   <span className="text-center">Gemini</span>
                 </div>
               </div>
 
-              {/* Table Body */}
-              <div className="divide-y divide-gray-100 relative">
+              <div className="divide-y divide-gray-100">
                 {allFlat.map((item, idx) => {
                   const isLocked = idx >= visibleLimit;
-                  const result = analysis.rankResults.find((r) => r.keyword === item.keyword);
-                  const isChecking = rankingProgress.total > 0 && analysis.status !== "complete";
+                  const hasResult = !!keywordDetails[item.keyword];
 
                   return (
-                    <div key={idx}>
-                      <div
-                        className={`grid grid-cols-[50px_1fr_150px_90px_90px_90px] items-center px-4 py-3 text-sm transition-colors ${
-                          isLocked
-                            ? "blur-[3px] select-none pointer-events-none opacity-40"
-                            : result
-                              ? "bg-white hover:bg-gray-50 cursor-pointer"
-                              : "bg-white"
-                        }`}
-                        onClick={() => {
-                          if (!isLocked && result) {
-                            setExpandedKeyword(expandedKeyword === item.keyword ? null : item.keyword);
-                          }
-                        }}
-                      >
-                        <span className="text-gray-400 font-medium">{idx + 1}</span>
-                        <div className="flex items-center gap-2 min-w-0 pr-2">
-                          <span className="text-gray-800 truncate">{item.keyword}</span>
-                          {result && (
-                            expandedKeyword === item.keyword
-                              ? <ChevronUp className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                              : <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                          )}
-                        </div>
-                        <span className="text-xs text-gray-500 truncate">{item.category}</span>
-
-                        {/* Perplexity */}
-                        <div className="flex justify-center">
-                          {isLocked ? (
-                            <span className="text-gray-300">-</span>
-                          ) : isChecking && !result ? (
-                            <span className="text-gray-300 text-xs">-</span>
-                          ) : result ? (
-                            <RankBadge status={getProviderStatus(result, "perplexity")} />
-                          ) : (
-                            <span className="text-gray-300 text-xs">-</span>
-                          )}
-                        </div>
-
-                        {/* ChatGPT */}
-                        <div className="flex justify-center">
-                          {isLocked ? (
-                            <span className="text-gray-300">-</span>
-                          ) : isChecking && !result ? (
-                            <span className="text-gray-300 text-xs">-</span>
-                          ) : result ? (
-                            <RankBadge status={getProviderStatus(result, "chatgpt")} />
-                          ) : (
-                            <span className="text-gray-300 text-xs">-</span>
-                          )}
-                        </div>
-
-                        {/* Gemini */}
-                        <div className="flex justify-center">
-                          {isLocked ? (
-                            <span className="text-gray-300">-</span>
-                          ) : isChecking && !result ? (
-                            <span className="text-gray-300 text-xs">-</span>
-                          ) : result ? (
-                            <RankBadge status={getProviderStatus(result, "gemini")} />
-                          ) : (
-                            <span className="text-gray-300 text-xs">-</span>
-                          )}
-                        </div>
+                    <div
+                      key={idx}
+                      className={`grid grid-cols-[40px_1fr_90px_90px_90px] items-center px-4 py-3.5 text-sm transition-colors ${
+                        isLocked
+                          ? "blur-[3px] select-none pointer-events-none opacity-40"
+                          : hasResult
+                            ? "bg-white hover:bg-gray-50 cursor-pointer"
+                            : "bg-white"
+                      }`}
+                      onClick={() => {
+                        if (!isLocked && hasResult) openModal(item.keyword);
+                      }}
+                    >
+                      <span className="text-gray-400 font-medium">{idx + 1}</span>
+                      <div className="min-w-0 pr-3">
+                        <p className="text-gray-800 leading-snug">{item.keyword}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">{item.category}</p>
                       </div>
-
-                      {/* Expanded detail row */}
-                      {!isLocked && expandedKeyword === item.keyword && result && (
-                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-100">
-                          {result.competitorsFound.length > 0 && (
-                            <div className="mb-3">
-                              <h5 className="text-xs font-semibold text-gray-500 uppercase mb-2">Competitors Found</h5>
-                              <div className="space-y-1.5">
-                                {result.competitorsFound.map((comp, ci) => (
-                                  <div key={ci} className="flex items-center gap-2 text-sm">
-                                    <span className="w-5 h-5 bg-red-100 text-red-600 rounded-full flex items-center justify-center text-xs font-bold shrink-0">
-                                      {comp.position || "?"}
-                                    </span>
-                                    <span className="font-medium text-gray-800">{comp.name}</span>
-                                    {comp.url && <span className="text-gray-400 text-xs">{comp.url}</span>}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
+                      <div className="flex justify-center">
+                        <StatusBadge status={isLocked ? "locked" : getProviderStatus(item.keyword, "perplexity")} />
+                      </div>
+                      <div className="flex justify-center">
+                        <StatusBadge status={isLocked ? "locked" : getProviderStatus(item.keyword, "chatgpt")} />
+                      </div>
+                      <div className="flex justify-center">
+                        <StatusBadge status={isLocked ? "locked" : getProviderStatus(item.keyword, "gemini")} />
+                      </div>
                     </div>
                   );
                 })}
               </div>
             </div>
 
-            {/* Upgrade overlay for locked keywords */}
+            {/* Upgrade overlay */}
             {hasLockedKeywords && (
               <div className="mt-4 p-5 bg-gradient-to-r from-brand-50 to-purple-50 border border-brand-200 rounded-lg text-center">
                 <Lock className="w-5 h-5 text-brand-600 mx-auto mb-2" />
@@ -651,54 +616,35 @@ export default function AnalyzePage() {
                 <p className="text-xs text-gray-500 mb-3">
                   Upgrade your plan to unlock all keywords and check rankings across all AI models.
                 </p>
-                <button
-                  onClick={() => router.push("/pricing")}
-                  className="btn-primary px-6 py-2 text-sm"
-                >
+                <button onClick={() => router.push("/pricing")} className="btn-primary px-6 py-2 text-sm">
                   Upgrade to View More
                 </button>
               </div>
             )}
 
-            {/* Summary stats (after rankings complete) */}
+            {/* Summary stats */}
             {step === "results" && analysis.rankResults.length > 0 && (
               <div className="grid grid-cols-3 gap-4 mt-6">
                 <div className="p-4 bg-emerald-50 rounded-lg text-center">
                   <p className="text-2xl font-bold text-emerald-600">
-                    {analysis.rankResults.filter((r) => {
-                      try {
-                        const map = JSON.parse(r.response);
-                        return map.perplexity || map.chatgpt || map.gemini;
-                      } catch {
-                        return r.isYouRanked;
-                      }
-                    }).length}
+                    {analysis.rankResults.filter((r) => r.isYouRanked).length}
                   </p>
                   <p className="text-xs text-emerald-700 mt-1">Keywords Ranking</p>
                 </div>
                 <div className="p-4 bg-red-50 rounded-lg text-center">
                   <p className="text-2xl font-bold text-red-600">
-                    {analysis.rankResults.filter((r) => {
-                      try {
-                        const map = JSON.parse(r.response);
-                        return !map.perplexity && !map.chatgpt && !map.gemini;
-                      } catch {
-                        return !r.isYouRanked;
-                      }
-                    }).length}
+                    {analysis.rankResults.filter((r) => !r.isYouRanked).length}
                   </p>
                   <p className="text-xs text-red-700 mt-1">Not Ranking</p>
                 </div>
                 <div className="p-4 bg-gray-50 rounded-lg text-center">
-                  <p className="text-2xl font-bold text-gray-900">
-                    {analysis.rankResults.length}
-                  </p>
+                  <p className="text-2xl font-bold text-gray-900">{analysis.rankResults.length}</p>
                   <p className="text-xs text-gray-500 mt-1">Total Checked</p>
                 </div>
               </div>
             )}
 
-            {/* Check Rankings button (only before checking) */}
+            {/* Check Rankings button */}
             {step === "ranking" && rankingProgress.total === 0 && (
               <button
                 onClick={handleCheckRankings}
@@ -711,27 +657,191 @@ export default function AnalyzePage() {
           </div>
         </div>
       )}
+
+      {/* Detail Modal */}
+      {modalKeyword && modalDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setModalKeyword(null)}>
+          <div
+            className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal header */}
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-start justify-between rounded-t-xl">
+              <div className="pr-4">
+                <p className="text-base font-semibold text-gray-900 leading-snug">{modalKeyword}</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {allFlat.find(f => f.keyword === modalKeyword)?.category}
+                </p>
+              </div>
+              <button onClick={() => setModalKeyword(null)} className="p-1 text-gray-400 hover:text-gray-600 shrink-0">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-6">
+              {/* Per-provider ranking status */}
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-brand-600" />
+                  Ranking Status
+                </h4>
+                <div className="grid grid-cols-3 gap-3">
+                  {(["perplexity", "chatgpt", "gemini"] as const).map((prov) => {
+                    const data = modalDetail.providers[prov];
+                    const label = prov === "chatgpt" ? "ChatGPT" : prov === "perplexity" ? "Perplexity" : "Gemini";
+                    return (
+                      <div
+                        key={prov}
+                        className={`p-3 rounded-lg text-center border ${
+                          data?.isRanked
+                            ? "bg-emerald-50 border-emerald-200"
+                            : "bg-red-50 border-red-200"
+                        }`}
+                      >
+                        <p className="text-xs font-medium text-gray-500 mb-1">{label}</p>
+                        <div className="flex items-center justify-center gap-1">
+                          {data?.isRanked ? (
+                            <>
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                              <span className="text-sm font-bold text-emerald-700">Ranking</span>
+                            </>
+                          ) : (
+                            <>
+                              <XCircle className="w-4 h-4 text-red-500" />
+                              <span className="text-sm font-bold text-red-600">Not Ranking</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Top competitors found across providers */}
+              {(() => {
+                const allComps = new Map<string, { name: string; url: string; position: number | null; snippet: string; providers: string[] }>();
+                Object.entries(modalDetail.providers).forEach(([prov, data]) => {
+                  data.competitorsFound.forEach(c => {
+                    const key = c.name.toLowerCase();
+                    if (allComps.has(key)) {
+                      allComps.get(key)!.providers.push(prov);
+                    } else {
+                      allComps.set(key, { ...c, providers: [prov] });
+                    }
+                  });
+                });
+                const sorted = Array.from(allComps.values()).sort((a, b) => (a.position ?? 99) - (b.position ?? 99)).slice(0, 10);
+
+                if (sorted.length === 0) return null;
+
+                return (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                      <Search className="w-4 h-4 text-brand-600" />
+                      Who&apos;s Showing Up ({sorted.length} competitors)
+                    </h4>
+                    <div className="space-y-2">
+                      {sorted.map((comp, i) => (
+                        <div key={i} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                          <span className="w-6 h-6 bg-gray-200 text-gray-600 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
+                            {comp.position ?? i + 1}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-gray-900">{comp.name}</span>
+                              <span className="text-xs text-gray-400">{comp.url}</span>
+                            </div>
+                            {comp.snippet && (
+                              <p className="text-xs text-gray-500 mt-1 line-clamp-2">{comp.snippet}</p>
+                            )}
+                            <div className="flex gap-1 mt-1.5">
+                              {comp.providers.map(p => (
+                                <span key={p} className="text-[10px] px-1.5 py-0.5 rounded bg-brand-50 text-brand-600 font-medium">
+                                  {p === "chatgpt" ? "ChatGPT" : p === "perplexity" ? "Perplexity" : "Gemini"}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Gap Analysis */}
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <Lightbulb className="w-4 h-4 text-amber-500" />
+                  How to Start Ranking
+                </h4>
+                {loadingGap && !gapAnalysis[modalKeyword] ? (
+                  <div className="flex items-center gap-3 p-4 bg-amber-50 rounded-lg">
+                    <Loader2 className="w-4 h-4 text-amber-600 animate-spin" />
+                    <span className="text-sm text-amber-700">Analyzing your ranking gap...</span>
+                  </div>
+                ) : gapAnalysis[modalKeyword] ? (
+                  <div className="p-4 bg-amber-50 border border-amber-100 rounded-lg">
+                    <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
+                      {gapAnalysis[modalKeyword]}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-gray-50 rounded-lg text-sm text-gray-500">
+                    Gap analysis will appear after rankings are checked.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// Small component for Yes/No ranking badge
-function RankBadge({ status }: { status: "yes" | "no" | "pending" }) {
-  if (status === "pending") {
-    return <span className="text-gray-300 text-xs">-</span>;
-  }
+export default function AnalyzePage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-gray-500">Loading...</div>}>
+      <AnalyzeContent />
+    </Suspense>
+  );
+}
+
+// Reusable components
+function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="py-4 flex flex-wrap items-start gap-x-4 gap-y-1">
+      <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide w-24 shrink-0 pt-0.5">{label}</span>
+      <div className="flex flex-wrap gap-1.5">{children}</div>
+    </div>
+  );
+}
+
+function Tag({ children, color }: { children: React.ReactNode; color: "brand" | "red" | "green" | "purple" | "gray" }) {
+  const colors = {
+    brand: "bg-brand-50 text-brand-700",
+    red: "bg-red-50 text-red-600",
+    green: "bg-green-50 text-green-700",
+    purple: "bg-purple-50 text-purple-700",
+    gray: "bg-gray-100 text-gray-700",
+  };
+  return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${colors[color]}`}>{children}</span>;
+}
+
+function StatusBadge({ status }: { status: "yes" | "no" | "pending" | "locked" }) {
+  if (status === "locked" || status === "pending") return <span className="text-gray-300 text-xs">-</span>;
   if (status === "yes") {
     return (
       <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-        <CheckCircle2 className="w-3 h-3" />
-        Yes
+        <CheckCircle2 className="w-3 h-3" />Yes
       </span>
     );
   }
   return (
     <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
-      <XCircle className="w-3 h-3" />
-      No
+      <XCircle className="w-3 h-3" />No
     </span>
   );
 }

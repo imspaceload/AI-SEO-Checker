@@ -8,14 +8,12 @@ import {
   Sparkles,
   Settings,
   Activity,
-  CreditCard,
 } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/analyze", label: "Analyze Website", icon: Sparkles },
   { href: "/checker", label: "Quick Check", icon: Search },
-  { href: "/pricing", label: "Pricing", icon: CreditCard },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
