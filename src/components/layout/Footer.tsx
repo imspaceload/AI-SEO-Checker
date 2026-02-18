@@ -6,19 +6,16 @@ const footerLinks = {
     { label: "AI Citation Checker", href: "/#features" },
     { label: "AEO vs SEO", href: "/#aeo-vs-seo" },
     { label: "How It Works", href: "/#how-it-works" },
-    { label: "Pricing", href: "#" },
+    { label: "Pricing", href: "/pricing" },
   ],
   Resources: [
-    { label: "What is AEO?", href: "#" },
-    { label: "AI SEO Guide", href: "#" },
-    { label: "Blog", href: "#" },
-    { label: "Changelog", href: "#" },
+    { label: "Documentation", href: "/docs" },
+    { label: "What is AEO?", href: "/#aeo-vs-seo" },
+    { label: "How It Works", href: "/#how-it-works" },
   ],
   Company: [
-    { label: "About", href: "#" },
-    { label: "Contact", href: "#" },
-    { label: "Privacy Policy", href: "#" },
-    { label: "Terms of Service", href: "#" },
+    { label: "Privacy Policy", href: "/privacy" },
+    { label: "Terms of Service", href: "/terms" },
   ],
 };
 
@@ -50,12 +47,12 @@ export default function Footer() {
               <ul className="space-y-2.5">
                 {links.map((link) => (
                   <li key={link.label}>
-                    <a
+                    <Link
                       href={link.href}
                       className="text-sm hover:text-white transition-colors"
                     >
                       {link.label}
-                    </a>
+                    </Link>
                   </li>
                 ))}
               </ul>
