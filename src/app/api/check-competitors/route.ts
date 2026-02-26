@@ -4,6 +4,7 @@ import { AIProvider, CompetitorMention } from "@/types";
 interface CompetitorCheckRequest {
   keyword: string;
   websiteUrl: string;
+  businessName: string;
   competitors: string[];
   provider: AIProvider;
   apiKeys: {
@@ -16,43 +17,82 @@ interface CompetitorCheckRequest {
 function extractCompetitors(
   response: string,
   websiteUrl: string,
+  businessName: string,
   knownCompetitors: string[]
-): { competitorsFound: CompetitorMention[]; yourRank: number | null; isYouRanked: boolean } {
+): {
+  competitorsFound: CompetitorMention[];
+  yourRank: number | null;
+  isYouRanked: boolean;
+  responseSnippet: string;
+} {
   const normalizedResponse = response.toLowerCase();
   const normalizedUrl = websiteUrl.toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, "").replace(/\/$/, "");
-  const brandName = normalizedUrl.split(".")[0];
+  const brandFromUrl = normalizedUrl.split(".")[0];
+  const normalizedBusiness = businessName.toLowerCase().trim();
 
-  // Check if user's website is mentioned
+  // Build multiple patterns to check: brand from URL, full URL, business name, business name words
+  const patterns: string[] = [];
+  if (brandFromUrl.length >= 3) patterns.push(brandFromUrl);
+  if (normalizedUrl.length >= 3) patterns.push(normalizedUrl);
+  if (normalizedBusiness.length >= 3) patterns.push(normalizedBusiness);
+  // Also check individual significant words from business name (e.g. "Organic SEO" -> check "organic")
+  const businessWords = normalizedBusiness.split(/\s+/).filter(w => w.length >= 4);
+  // Only add multi-word business name as combined check, not individual common words
+  if (businessWords.length > 1) {
+    patterns.push(normalizedBusiness);
+  }
+
+  // Check if user's website/brand is mentioned
   let isYouRanked = false;
   let yourRank: number | null = null;
+  let responseSnippet = "";
 
-  if (brandName.length >= 3 && normalizedResponse.includes(brandName)) {
-    isYouRanked = true;
-    // Try to find position in numbered list
-    const lines = response.split("\n");
-    for (const line of lines) {
-      if (line.toLowerCase().includes(brandName)) {
-        const match = line.match(/^[\s]*(\d+)[.)]\s/);
-        if (match) {
-          yourRank = parseInt(match[1]);
+  for (const pattern of patterns) {
+    if (pattern.length >= 3 && normalizedResponse.includes(pattern)) {
+      isYouRanked = true;
+      // Extract the sentence containing the match as proof
+      const sentences = response.split(/(?<=[.!?])\s+/);
+      for (const sentence of sentences) {
+        if (sentence.toLowerCase().includes(pattern)) {
+          responseSnippet = sentence.trim();
+          break;
         }
-        break;
       }
+      // Try to find position in numbered list
+      const lines = response.split("\n");
+      for (const line of lines) {
+        if (line.toLowerCase().includes(pattern)) {
+          const match = line.match(/^[\s]*(\d+)[.)]\s/);
+          if (match) {
+            yourRank = parseInt(match[1]);
+          }
+          if (!responseSnippet) {
+            responseSnippet = line.replace(/^\s*\d+[.)]\s+/, "").replace(/\*{1,2}/g, "").trim();
+          }
+          break;
+        }
+      }
+      break;
     }
+  }
+
+  // If not ranked, grab first 2 sentences as context of what AI said instead
+  if (!isYouRanked) {
+    const sentences = response.split(/(?<=[.!?])\s+/).slice(0, 2);
+    responseSnippet = sentences.join(" ").slice(0, 300);
   }
 
   // Find competitors mentioned
   const competitorsFound: CompetitorMention[] = [];
   const allToCheck = [...knownCompetitors];
 
-  // Also extract any URLs/brands from numbered lists in the response
+  // Extract brands/URLs from numbered lists in the response
   const listPattern = /^\s*(\d+)[.)]\s+\*{0,2}(?:\[)?([^*\]\n]+)/gm;
   let match;
   while ((match = listPattern.exec(response)) !== null) {
     const position = parseInt(match[1]);
     const text = match[2].trim();
 
-    // Check if this is a known competitor
     for (const comp of allToCheck) {
       const compNorm = comp.toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, "").replace(/\/$/, "");
       const compBrand = compNorm.split(".")[0];
@@ -62,7 +102,6 @@ function extractCompetitors(
         (text.toLowerCase().includes(compBrand) || text.toLowerCase().includes(compNorm))
       ) {
         if (!competitorsFound.find((c) => c.url === comp)) {
-          // Get snippet - the full line
           const lines = response.split("\n");
           let snippet = "";
           for (const line of lines) {
@@ -83,7 +122,7 @@ function extractCompetitors(
     }
   }
 
-  // Also do a simple text search for competitors not found in lists
+  // Simple text search for competitors not found in lists
   for (const comp of allToCheck) {
     const compNorm = comp.toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, "").replace(/\/$/, "");
     const compBrand = compNorm.split(".")[0];
@@ -111,7 +150,7 @@ function extractCompetitors(
     }
   }
 
-  return { competitorsFound, yourRank, isYouRanked };
+  return { competitorsFound, yourRank, isYouRanked, responseSnippet };
 }
 
 async function queryPerplexity(keyword: string, apiKey: string): Promise<string> {
@@ -127,7 +166,7 @@ async function queryPerplexity(keyword: string, apiKey: string): Promise<string>
         {
           role: "system",
           content:
-            "You are a helpful assistant. Provide detailed recommendations with specific product/service names, company names, and website URLs. Use numbered lists when recommending multiple options.",
+            "You are a helpful assistant. When recommending tools, products, or services, always include specific brand names, company names, and their website URLs. List your top recommendations in a numbered list. Be comprehensive and mention both popular and lesser-known options.",
         },
         { role: "user", content: keyword },
       ],
@@ -162,7 +201,7 @@ async function queryChatGPT(keyword: string, apiKey: string): Promise<string> {
           {
             role: "system",
             content:
-              "You are a helpful assistant. Provide detailed recommendations with specific product/service names, company names, and website URLs. Use numbered lists when recommending multiple options.",
+              "You are a helpful assistant. When recommending tools, products, or services, always include specific brand names, company names, and their website URLs. List your top recommendations in a numbered list. Be comprehensive and mention both popular and lesser-known options.",
           },
           { role: "user", content: keyword },
         ],
@@ -188,7 +227,15 @@ async function queryGemini(keyword: string, apiKey: string): Promise<string> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: keyword }] }],
+        contents: [
+          {
+            parts: [
+              {
+                text: `When recommending tools, products, or services, always include specific brand names, company names, and their website URLs. List your top recommendations in a numbered list.\n\n${keyword}`,
+              },
+            ],
+          },
+        ],
         generationConfig: { maxOutputTokens: 1500, temperature: 0.7 },
       }),
     }
@@ -206,7 +253,7 @@ async function queryGemini(keyword: string, apiKey: string): Promise<string> {
 export async function POST(request: NextRequest) {
   try {
     const body: CompetitorCheckRequest = await request.json();
-    const { keyword, websiteUrl, competitors, provider, apiKeys } = body;
+    const { keyword, websiteUrl, businessName, competitors, provider, apiKeys } = body;
 
     if (!keyword || !websiteUrl || !provider) {
       return NextResponse.json(
@@ -231,7 +278,7 @@ export async function POST(request: NextRequest) {
       response = await queryGemini(keyword, key);
     }
 
-    const result = extractCompetitors(response, websiteUrl, competitors);
+    const result = extractCompetitors(response, websiteUrl, businessName || "", competitors);
 
     return NextResponse.json({
       keyword,

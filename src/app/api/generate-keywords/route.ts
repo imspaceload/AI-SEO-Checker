@@ -63,13 +63,23 @@ The prompts must:
 - Be specific enough that the AI would mention real brands/products in response
 - Target queries where the business SHOULD appear if they're doing AI SEO right
 - Cover different stages of the buyer journey (awareness, consideration, decision)
+- Each keyword MUST include a search intent classification
+
+Search intent types:
+- "informational" = User wants to learn something ("How does X work?", "What is X?")
+- "commercial" = User is researching before buying ("Best X for Y", "X vs Y comparison")
+- "transactional" = User is ready to buy/sign up ("Buy X", "X pricing", "X free trial")
+- "navigational" = User looking for a specific brand/product ("X login", "X website")
 
 Return ONLY valid JSON in this format:
 {
   "keywords": [
     {
       "category": "Category Name",
-      "keywords": ["prompt 1", "prompt 2", "prompt 3"]
+      "keywords": [
+        { "keyword": "prompt text here", "intent": "commercial" },
+        { "keyword": "another prompt", "intent": "informational" }
+      ]
     }
   ]
 }`,
@@ -88,21 +98,24 @@ BUSINESS CONTEXT:
 - Target industries: ${targetMarket.industries.join(", ")}
 - Direct competitors: ${competitors.join(", ")}
 
-Generate 6 categories with 3-4 prompts each:
+Generate 6 categories with 3-4 prompts each. IMPORTANT: Do NOT include "${businessName}" or the company name inside any prompt text. These prompts must be GENERIC so we can test if AI naturally recommends the brand without being asked about it directly.
 
-1. "BEST TOOL" QUERIES - "What's the best [product type] for [specific use case]?" These are high-intent queries where someone is looking for a recommendation.
+1. "BEST TOOL" QUERIES (intent: commercial) - "What's the best [product type] for [specific use case]?" High-intent queries where someone wants a recommendation. Do NOT mention any specific brand.
 
-2. "VERSUS / COMPARISON" QUERIES - "What's better, ${competitors[0] || "Competitor A"} or ${competitors[1] || "Competitor B"}?" and "${businessName} vs [competitor]" type comparisons.
+2. "VERSUS / COMPARISON" QUERIES (intent: commercial) - Compare competitors: "${competitors[0] || "Competitor A"} vs ${competitors[1] || "Competitor B"}" but also generic like "best [product] compared". OK to mention competitors but NOT "${businessName}".
 
-3. "HOW TO / PROBLEM" QUERIES - "How do I [solve specific pain point]?" or "What tool should I use to [task]?" queries where the AI might recommend a product.
+3. "HOW TO / PROBLEM" QUERIES (intent: informational) - "How do I [solve specific pain point]?" or "What tool should I use to [task]?" Problem-focused queries where AI might recommend products.
 
-4. "RECOMMENDATION" QUERIES - "Can you recommend a [product type] for [specific audience/industry]?" Direct recommendation requests.
+4. "RECOMMENDATION" QUERIES (intent: transactional) - "Can you recommend a [product type] for [specific audience/industry]?" Direct recommendation requests.
 
-5. "ALTERNATIVES" QUERIES - "What are the best alternatives to [competitor]?" or "I'm looking for something like [competitor] but [cheaper/better/different]"
+5. "ALTERNATIVES" QUERIES (intent: commercial) - "What are the best alternatives to [competitor]?" or "I'm looking for something like [competitor] but [cheaper/better/different]"
 
-6. "INDUSTRY SPECIFIC" QUERIES - "[Industry] specific questions like "What [product type] do [target market] companies use?" or "Best [product] for [industry] in [country]"
+6. "INDUSTRY SPECIFIC" QUERIES (intent: informational) - "[Industry] specific: "What [product type] do [target market] companies use?" or "Best [product] for [industry] in [country]"
 
-Make them sound natural - like how a real person talks to ChatGPT or Perplexity. Not keyword-stuffed SEO queries, but actual conversational prompts.
+CRITICAL RULES:
+- Do NOT include "${businessName}" in any prompt text. We want to see if AI mentions the brand organically.
+- Each keyword must be a JSON object with "keyword" and "intent" fields.
+- Make them sound natural - like how a real person talks to ChatGPT or Perplexity.
 Return ONLY the JSON.`,
           },
         ],

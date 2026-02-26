@@ -23,9 +23,16 @@ export interface WebsiteAnalysis {
   status: "analyzing" | "keywords" | "ranking" | "complete" | "error";
 }
 
+export type SearchIntent = "informational" | "commercial" | "transactional" | "navigational";
+
+export interface KeywordItem {
+  keyword: string;
+  intent: SearchIntent;
+}
+
 export interface KeywordGroup {
   category: string;
-  keywords: string[];
+  keywords: (string | KeywordItem)[];
 }
 
 export interface KeywordRankResult {

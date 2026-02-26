@@ -9,6 +9,7 @@ import {
   WebsiteAnalysis,
   KeywordGroup,
   KeywordRankResult,
+  KeywordItem,
 } from "@/types";
 import { generateId } from "@/lib/utils";
 import LoadingSpinner from "@/components/ui/LoadingSpinner";
@@ -25,6 +26,16 @@ import {
   X,
   Lightbulb,
   TrendingUp,
+  FileText,
+  Target,
+  Zap,
+  BookOpen,
+  ShoppingCart,
+  MousePointer,
+  Compass,
+  ChevronDown,
+  ChevronUp,
+  MessageSquareQuote,
 } from "lucide-react";
 
 type Step = "input" | "analyzing" | "review" | "keywords" | "ranking" | "results";
@@ -43,8 +54,23 @@ interface KeywordDetail {
   providers: Record<string, {
     isRanked: boolean;
     response: string;
+    responseSnippet: string;
     competitorsFound: { name: string; url: string; position: number | null; snippet: string }[];
   }>;
+}
+
+interface ContentSuggestion {
+  query: string;
+  intent: string;
+  contentType: string;
+  title: string;
+  why: string;
+}
+
+interface ContentSuggestionsData {
+  contentQueries: ContentSuggestion[];
+  quickWins: string[];
+  contentGaps: string[];
 }
 
 function AnalyzeContent() {
@@ -58,6 +84,9 @@ function AnalyzeContent() {
   const [modalKeyword, setModalKeyword] = useState<string | null>(null);
   const [gapAnalysis, setGapAnalysis] = useState<Record<string, string>>({});
   const [loadingGap, setLoadingGap] = useState(false);
+  const [contentSuggestions, setContentSuggestions] = useState<ContentSuggestionsData | null>(null);
+  const [loadingContentSuggestions, setLoadingContentSuggestions] = useState(false);
+  const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
 
   const { data: session } = useSession();
   const router = useRouter();
@@ -72,14 +101,19 @@ function AnalyzeContent() {
       if (saved) {
         setAnalysis(saved);
         setUrl(saved.url);
-        // Determine the right step based on status
         if (saved.status === "complete" && saved.rankResults.length > 0) {
-          // Rebuild keywordDetails from rankResults for the modal
           const details: Record<string, KeywordDetail> = {};
           saved.rankResults.forEach((r) => {
             try {
               const providerMap = JSON.parse(r.response);
-              if (typeof providerMap === "object") {
+              if (typeof providerMap === "object" && providerMap.providerData) {
+                // New format with response snippets
+                details[r.keyword] = {
+                  keyword: r.keyword,
+                  providers: providerMap.providerData,
+                };
+              } else if (typeof providerMap === "object") {
+                // Legacy format
                 details[r.keyword] = {
                   keyword: r.keyword,
                   providers: Object.fromEntries(
@@ -88,6 +122,7 @@ function AnalyzeContent() {
                       {
                         isRanked: !!ranked,
                         response: "",
+                        responseSnippet: "",
                         competitorsFound: prov === r.provider ? (r.competitorsFound || []) : [],
                       },
                     ])
@@ -133,12 +168,19 @@ function AnalyzeContent() {
     return planLimit;
   };
 
+  // Helper to normalize keyword items (support both old string[] and new KeywordItem[] format)
+  const normalizeKeyword = (kw: string | KeywordItem): { keyword: string; intent: string } => {
+    if (typeof kw === "string") return { keyword: kw, intent: "commercial" };
+    return { keyword: kw.keyword, intent: kw.intent || "commercial" };
+  };
+
   const getAllKeywordsFlat = () => {
     if (!analysis) return [];
-    const flat: { keyword: string; category: string }[] = [];
+    const flat: { keyword: string; category: string; intent: string }[] = [];
     analysis.keywords.forEach((group) => {
       group.keywords.forEach((kw) => {
-        flat.push({ keyword: kw, category: group.category });
+        const { keyword, intent } = normalizeKeyword(kw);
+        flat.push({ keyword, category: group.category, intent });
       });
     });
     return flat;
@@ -234,14 +276,14 @@ function AnalyzeContent() {
     }
   };
 
-  // Step 3: Check Rankings
+  // Step 3: Check Rankings - Actually queries each AI provider
   const handleCheckRankings = async () => {
     if (!analysis || analysis.keywords.length === 0) return;
     setError(null);
 
     const allFlat = getAllKeywordsFlat();
     const limit = getVisibleLimit();
-    const visibleKeywords = allFlat.slice(0, limit).map((k) => k.keyword);
+    const visibleKeywords = allFlat.slice(0, limit);
     const providers: AIProvider[] = ["perplexity", "chatgpt", "gemini"];
 
     setRankingProgress({ current: 0, total: visibleKeywords.length, keyword: "" });
@@ -250,12 +292,11 @@ function AnalyzeContent() {
     const results: KeywordRankResult[] = [];
 
     for (let i = 0; i < visibleKeywords.length; i++) {
-      const keyword = visibleKeywords[i];
+      const { keyword } = visibleKeywords[i];
       setRankingProgress({ current: i + 1, total: visibleKeywords.length, keyword });
 
       const detail: KeywordDetail = { keyword, providers: {} };
-      const providerMap: Record<string, boolean> = {};
-      let lastResult: KeywordRankResult | null = null;
+      const providerData: Record<string, { isRanked: boolean; responseSnippet: string }> = {};
 
       for (const provider of providers) {
         try {
@@ -265,6 +306,7 @@ function AnalyzeContent() {
             body: JSON.stringify({
               keyword,
               websiteUrl: analysis.url,
+              businessName: analysis.businessName,
               competitors: analysis.competitors,
               provider,
               apiKeys,
@@ -273,33 +315,53 @@ function AnalyzeContent() {
 
           if (res.ok) {
             const data = await res.json();
-            providerMap[provider] = data.isYouRanked;
+            providerData[provider] = {
+              isRanked: data.isYouRanked,
+              responseSnippet: data.responseSnippet || "",
+            };
             detail.providers[provider] = {
               isRanked: data.isYouRanked,
               response: data.response,
+              responseSnippet: data.responseSnippet || "",
               competitorsFound: data.competitorsFound || [],
             };
-            lastResult = data;
           } else {
-            providerMap[provider] = false;
-            detail.providers[provider] = { isRanked: false, response: "", competitorsFound: [] };
+            providerData[provider] = { isRanked: false, responseSnippet: "" };
+            detail.providers[provider] = { isRanked: false, response: "", responseSnippet: "", competitorsFound: [] };
           }
         } catch {
-          providerMap[provider] = false;
-          detail.providers[provider] = { isRanked: false, response: "", competitorsFound: [] };
+          providerData[provider] = { isRanked: false, responseSnippet: "" };
+          detail.providers[provider] = { isRanked: false, response: "", responseSnippet: "", competitorsFound: [] };
         }
       }
 
       details[keyword] = detail;
       setKeywordDetails({ ...details });
 
+      // Store with new format that preserves per-provider data
       results.push({
         keyword,
         provider: "perplexity",
-        competitorsFound: lastResult?.competitorsFound || [],
-        yourRank: lastResult?.yourRank ?? null,
-        isYouRanked: Object.values(providerMap).some(Boolean),
-        response: JSON.stringify(providerMap),
+        competitorsFound: [
+          ...(detail.providers.perplexity?.competitorsFound || []),
+          ...(detail.providers.chatgpt?.competitorsFound || []),
+          ...(detail.providers.gemini?.competitorsFound || []),
+        ],
+        yourRank: null,
+        isYouRanked: Object.values(providerData).some((p) => p.isRanked),
+        response: JSON.stringify({
+          providerData: Object.fromEntries(
+            Object.entries(detail.providers).map(([prov, data]) => [
+              prov,
+              {
+                isRanked: data.isRanked,
+                responseSnippet: data.responseSnippet,
+                response: "",
+                competitorsFound: data.competitorsFound,
+              },
+            ])
+          ),
+        }),
         checkedAt: new Date().toISOString(),
       });
 
@@ -320,13 +382,16 @@ function AnalyzeContent() {
     if (detail?.providers[provider]) {
       return detail.providers[provider].isRanked ? "yes" : "no";
     }
-    // Fallback: check rankResults (loaded from localStorage)
     if (analysis) {
       const result = analysis.rankResults.find((r) => r.keyword === keyword);
       if (result) {
         try {
           const map = JSON.parse(result.response);
-          if (typeof map === "object" && provider in map) {
+          if (map.providerData?.[provider]) {
+            return map.providerData[provider].isRanked ? "yes" : "no";
+          }
+          // Legacy format
+          if (typeof map === "object" && provider in map && !map.providerData) {
             return map[provider] ? "yes" : "no";
           }
         } catch {
@@ -344,16 +409,21 @@ function AnalyzeContent() {
     const result = analysis.rankResults.find((r) => r.keyword === keyword);
     if (!result) return null;
     try {
-      const providerMap = JSON.parse(result.response);
-      if (typeof providerMap === "object") {
+      const parsed = JSON.parse(result.response);
+      if (parsed.providerData) {
+        return { keyword, providers: parsed.providerData };
+      }
+      // Legacy format
+      if (typeof parsed === "object") {
         return {
           keyword,
           providers: Object.fromEntries(
-            Object.entries(providerMap).map(([prov, ranked]) => [
+            Object.entries(parsed).map(([prov, ranked]) => [
               prov,
               {
                 isRanked: !!ranked,
                 response: "",
+                responseSnippet: "",
                 competitorsFound: prov === result.provider ? (result.competitorsFound || []) : [],
               },
             ])
@@ -405,10 +475,39 @@ function AnalyzeContent() {
     }
   };
 
+  // Fetch content suggestions after rankings complete
+  const fetchContentSuggestions = async () => {
+    if (!analysis || contentSuggestions || loadingContentSuggestions) return;
+    setLoadingContentSuggestions(true);
+
+    try {
+      const res = await fetch("/api/content-suggestions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          businessName: analysis.businessName,
+          description: analysis.description,
+          products: analysis.products,
+          url: analysis.url,
+          rankingResults: analysis.rankResults,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setContentSuggestions(data);
+      }
+    } catch {
+      // silent
+    } finally {
+      setLoadingContentSuggestions(false);
+    }
+  };
+
   // Open modal and trigger gap analysis
   const openModal = (keyword: string) => {
     setModalKeyword(keyword);
-    // Ensure keywordDetails has an entry for this keyword
+    setExpandedProvider(null);
     if (!keywordDetails[keyword]) {
       const built = getOrBuildDetail(keyword);
       if (built) {
@@ -422,6 +521,13 @@ function AnalyzeContent() {
   const visibleLimit = getVisibleLimit();
   const hasLockedKeywords = allFlat.length > visibleLimit;
   const modalDetail = modalKeyword ? (keywordDetails[modalKeyword] || getOrBuildDetail(modalKeyword)) : null;
+
+  const intentConfig: Record<string, { label: string; color: string; icon: typeof Target }> = {
+    informational: { label: "Informational", color: "bg-blue-50 text-blue-700 border-blue-200", icon: BookOpen },
+    commercial: { label: "Commercial", color: "bg-purple-50 text-purple-700 border-purple-200", icon: Target },
+    transactional: { label: "Transactional", color: "bg-green-50 text-green-700 border-green-200", icon: ShoppingCart },
+    navigational: { label: "Navigational", color: "bg-orange-50 text-orange-700 border-orange-200", icon: Compass },
+  };
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
@@ -585,8 +691,8 @@ function AnalyzeContent() {
               </span>
             </div>
             <p className="text-sm text-gray-500 mb-6">
-              {allFlat.length} keywords across {analysis.keywords.length} categories.
-              {step === "ranking" && rankingProgress.total === 0 && " Click below to check rankings on all AI models."}
+              Each query is sent to Perplexity, ChatGPT &amp; Gemini to check if they cite your website.
+              {step === "ranking" && rankingProgress.total === 0 && " Click below to start checking."}
             </p>
 
             {/* Ranking progress */}
@@ -595,9 +701,12 @@ function AnalyzeContent() {
                 <div className="flex items-center gap-3 mb-2">
                   <Loader2 className="w-4 h-4 text-brand-600 animate-spin" />
                   <span className="text-sm font-medium text-brand-700">
-                    Checking Rankings... ({rankingProgress.current}/{rankingProgress.total})
+                    Querying AI models... ({rankingProgress.current}/{rankingProgress.total})
                   </span>
                 </div>
+                <p className="text-xs text-brand-600 mb-2 truncate">
+                  Checking: &ldquo;{rankingProgress.keyword}&rdquo;
+                </p>
                 <div className="w-full bg-brand-100 rounded-full h-2">
                   <div
                     className="bg-brand-600 h-2 rounded-full transition-all"
@@ -610,9 +719,10 @@ function AnalyzeContent() {
             {/* Keywords Table */}
             <div className="border border-gray-200 rounded-lg overflow-hidden">
               <div className="bg-gray-900 text-white">
-                <div className="grid grid-cols-[40px_1fr_90px_90px_90px] items-center px-4 py-3 text-xs font-semibold uppercase tracking-wide">
+                <div className="grid grid-cols-[40px_1fr_80px_90px_90px_90px] items-center px-4 py-3 text-xs font-semibold uppercase tracking-wide">
                   <span>#</span>
                   <span>Prompt</span>
+                  <span className="text-center">Intent</span>
                   <span className="text-center">Perplexity</span>
                   <span className="text-center">ChatGPT</span>
                   <span className="text-center">Gemini</span>
@@ -623,11 +733,12 @@ function AnalyzeContent() {
                 {allFlat.map((item, idx) => {
                   const isLocked = idx >= visibleLimit;
                   const hasResult = !!keywordDetails[item.keyword] || !!analysis.rankResults.find((r) => r.keyword === item.keyword);
+                  const intent = intentConfig[item.intent] || intentConfig.commercial;
 
                   return (
                     <div
                       key={idx}
-                      className={`grid grid-cols-[40px_1fr_90px_90px_90px] items-center px-4 py-3.5 text-sm transition-colors ${
+                      className={`grid grid-cols-[40px_1fr_80px_90px_90px_90px] items-center px-4 py-3.5 text-sm transition-colors ${
                         isLocked
                           ? "blur-[3px] select-none pointer-events-none opacity-40"
                           : hasResult
@@ -642,6 +753,9 @@ function AnalyzeContent() {
                       <div className="min-w-0 pr-3">
                         <p className="text-gray-800 leading-snug">{item.keyword}</p>
                         <p className="text-xs text-gray-400 mt-0.5">{item.category}</p>
+                      </div>
+                      <div className="flex justify-center">
+                        <IntentBadge intent={item.intent} config={intent} />
                       </div>
                       <div className="flex justify-center">
                         <StatusBadge status={isLocked ? "locked" : getProviderStatus(item.keyword, "perplexity")} />
@@ -707,6 +821,120 @@ function AnalyzeContent() {
               </button>
             )}
           </div>
+
+          {/* Content Suggestions Section */}
+          {step === "results" && analysis.rankResults.length > 0 && (
+            <div className="card p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-amber-50 rounded-lg">
+                    <Zap className="w-5 h-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">Content Strategy</h3>
+                    <p className="text-sm text-gray-500">AI-generated queries and content to help you get cited</p>
+                  </div>
+                </div>
+                {!contentSuggestions && !loadingContentSuggestions && (
+                  <button
+                    onClick={fetchContentSuggestions}
+                    className="btn-primary px-4 py-2 text-sm flex items-center gap-2"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Generate Suggestions
+                  </button>
+                )}
+              </div>
+
+              {loadingContentSuggestions && (
+                <div className="flex items-center gap-3 p-6 bg-amber-50 rounded-lg">
+                  <Loader2 className="w-5 h-5 text-amber-600 animate-spin" />
+                  <span className="text-sm text-amber-700">Analyzing your rankings and generating content strategy...</span>
+                </div>
+              )}
+
+              {contentSuggestions && (
+                <div className="space-y-6">
+                  {/* Quick Wins */}
+                  {contentSuggestions.quickWins?.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                        <Zap className="w-4 h-4 text-amber-500" />
+                        Quick Wins
+                      </h4>
+                      <div className="space-y-2">
+                        {contentSuggestions.quickWins.map((win, i) => (
+                          <div key={i} className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-100 rounded-lg">
+                            <CheckCircle2 className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                            <span className="text-sm text-gray-700">{win}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Content Gaps */}
+                  {contentSuggestions.contentGaps?.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                        <Target className="w-4 h-4 text-red-500" />
+                        Content Gaps
+                      </h4>
+                      <div className="space-y-2">
+                        {contentSuggestions.contentGaps.map((gap, i) => (
+                          <div key={i} className="flex items-start gap-3 p-3 bg-red-50 border border-red-100 rounded-lg">
+                            <XCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
+                            <span className="text-sm text-gray-700">{gap}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Suggested Content Queries */}
+                  {contentSuggestions.contentQueries?.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-brand-600" />
+                        Queries to Target ({contentSuggestions.contentQueries.length})
+                      </h4>
+                      <div className="border border-gray-200 rounded-lg overflow-hidden">
+                        <div className="bg-gray-50 grid grid-cols-[1fr_80px_90px] px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                          <span>Query &amp; Content</span>
+                          <span className="text-center">Intent</span>
+                          <span className="text-center">Type</span>
+                        </div>
+                        <div className="divide-y divide-gray-100">
+                          {contentSuggestions.contentQueries.map((sq, i) => {
+                            const sqIntent = intentConfig[sq.intent] || intentConfig.commercial;
+                            return (
+                              <div key={i} className="px-4 py-3">
+                                <div className="grid grid-cols-[1fr_80px_90px] items-start">
+                                  <div className="pr-3">
+                                    <p className="text-sm font-medium text-gray-900">{sq.query}</p>
+                                    <p className="text-xs text-brand-600 mt-1">{sq.title}</p>
+                                    <p className="text-xs text-gray-400 mt-0.5">{sq.why}</p>
+                                  </div>
+                                  <div className="flex justify-center pt-0.5">
+                                    <IntentBadge intent={sq.intent} config={sqIntent} />
+                                  </div>
+                                  <div className="flex justify-center pt-0.5">
+                                    <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-medium">
+                                      {sq.contentType}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -721,9 +949,19 @@ function AnalyzeContent() {
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-start justify-between rounded-t-xl">
               <div className="pr-4">
                 <p className="text-base font-semibold text-gray-900 leading-snug">{modalKeyword}</p>
-                <p className="text-xs text-gray-400 mt-1">
-                  {allFlat.find(f => f.keyword === modalKeyword)?.category}
-                </p>
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="text-xs text-gray-400">
+                    {allFlat.find(f => f.keyword === modalKeyword)?.category}
+                  </p>
+                  {(() => {
+                    const found = allFlat.find(f => f.keyword === modalKeyword);
+                    if (found) {
+                      const ic = intentConfig[found.intent] || intentConfig.commercial;
+                      return <IntentBadge intent={found.intent} config={ic} />;
+                    }
+                    return null;
+                  })()}
+                </div>
               </div>
               <button onClick={() => setModalKeyword(null)} className="p-1 text-gray-400 hover:text-gray-600 shrink-0">
                 <X className="w-5 h-5" />
@@ -731,39 +969,71 @@ function AnalyzeContent() {
             </div>
 
             <div className="px-6 py-5 space-y-6">
-              {/* Per-provider ranking status */}
+              {/* Per-provider ranking status with AI response proof */}
               <div>
                 <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
                   <TrendingUp className="w-4 h-4 text-brand-600" />
-                  Ranking Status
+                  AI Verification Results
                 </h4>
-                <div className="grid grid-cols-3 gap-3">
+                <p className="text-xs text-gray-400 mb-3">
+                  Each query was sent to the AI model. Below is whether your website was mentioned in their response.
+                </p>
+                <div className="space-y-3">
                   {(["perplexity", "chatgpt", "gemini"] as const).map((prov) => {
                     const data = modalDetail.providers[prov];
                     const label = prov === "chatgpt" ? "ChatGPT" : prov === "perplexity" ? "Perplexity" : "Gemini";
+                    const isExpanded = expandedProvider === prov;
+
                     return (
                       <div
                         key={prov}
-                        className={`p-3 rounded-lg text-center border ${
+                        className={`rounded-lg border ${
                           data?.isRanked
                             ? "bg-emerald-50 border-emerald-200"
                             : "bg-red-50 border-red-200"
                         }`}
                       >
-                        <p className="text-xs font-medium text-gray-500 mb-1">{label}</p>
-                        <div className="flex items-center justify-center gap-1">
-                          {data?.isRanked ? (
-                            <>
-                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                              <span className="text-sm font-bold text-emerald-700">Ranking</span>
-                            </>
-                          ) : (
-                            <>
-                              <XCircle className="w-4 h-4 text-red-500" />
-                              <span className="text-sm font-bold text-red-600">Not Ranking</span>
-                            </>
-                          )}
-                        </div>
+                        <button
+                          className="w-full flex items-center justify-between p-3"
+                          onClick={() => setExpandedProvider(isExpanded ? null : prov)}
+                        >
+                          <div className="flex items-center gap-3">
+                            <p className="text-xs font-semibold text-gray-600">{label}</p>
+                            <div className="flex items-center gap-1">
+                              {data?.isRanked ? (
+                                <>
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                  <span className="text-sm font-bold text-emerald-700">Cited</span>
+                                </>
+                              ) : (
+                                <>
+                                  <XCircle className="w-4 h-4 text-red-500" />
+                                  <span className="text-sm font-bold text-red-600">Not Cited</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 text-gray-400">
+                            <MessageSquareQuote className="w-3.5 h-3.5" />
+                            <span className="text-[10px]">View Response</span>
+                            {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                          </div>
+                        </button>
+
+                        {/* Expandable AI response proof */}
+                        {isExpanded && data?.responseSnippet && (
+                          <div className="px-3 pb-3">
+                            <div className="p-3 bg-white/80 rounded border border-gray-200 text-xs text-gray-600 leading-relaxed">
+                              <p className="font-medium text-gray-500 mb-1">AI Response Snippet:</p>
+                              <p className="italic">&ldquo;{data.responseSnippet}&rdquo;</p>
+                            </div>
+                          </div>
+                        )}
+                        {isExpanded && !data?.responseSnippet && (
+                          <div className="px-3 pb-3">
+                            <p className="text-xs text-gray-400 italic">Response snippet not available for this check.</p>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -894,6 +1164,16 @@ function StatusBadge({ status }: { status: "yes" | "no" | "pending" | "locked" }
   return (
     <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
       <XCircle className="w-3 h-3" />No
+    </span>
+  );
+}
+
+function IntentBadge({ intent, config }: { intent: string; config: { label: string; color: string; icon: React.ElementType } }) {
+  const Icon = config.icon;
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${config.color}`}>
+      <Icon className="w-2.5 h-2.5" />
+      {config.label.slice(0, 5)}
     </span>
   );
 }
