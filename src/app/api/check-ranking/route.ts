@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AIProvider, RankCheckResult } from "@/types";
+import { requireAuth, rateLimit } from "@/lib/api-auth";
 
 interface CheckRequest {
   query: string;
@@ -320,6 +321,14 @@ async function checkGemini(
 
 export async function POST(request: NextRequest) {
   try {
+    const { error: authError } = await requireAuth();
+    if (authError) return authError;
+
+    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    if (!rateLimit(ip, 30, 60000)) {
+      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    }
+
     const body: CheckRequest = await request.json();
     const { query, website, providers, apiKeys } = body;
 

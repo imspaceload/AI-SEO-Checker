@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAuth, rateLimit } from "@/lib/api-auth";
 
 export async function POST(request: NextRequest) {
   try {
+    const { error: authError } = await requireAuth();
+    if (authError) return authError;
+
+    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    if (!rateLimit(ip, 10, 60000)) {
+      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    }
+
     const { businessName, description, products, url, rankingResults } = await request.json();
 
     const perplexityKey = process.env.PERPLEXITY_API_KEY;

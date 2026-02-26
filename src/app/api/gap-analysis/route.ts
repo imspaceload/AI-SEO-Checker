@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAuth, rateLimit } from "@/lib/api-auth";
 
 export async function POST(request: NextRequest) {
   try {
+    const { error: authError } = await requireAuth();
+    if (authError) return authError;
+
+    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    if (!rateLimit(ip, 30, 60000)) {
+      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    }
+
     const { keyword, websiteUrl, businessName, rankingSummary } = await request.json();
 
     if (!keyword || !websiteUrl) {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAuth, rateLimit } from "@/lib/api-auth";
 
 interface KeywordRequest {
   businessName: string;
@@ -34,6 +35,14 @@ function parseJSON(content: string) {
 
 export async function POST(request: NextRequest) {
   try {
+    const { error: authError } = await requireAuth();
+    if (authError) return authError;
+
+    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    if (!rateLimit(ip, 10, 60000)) {
+      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    }
+
     const body: KeywordRequest = await request.json();
     const { businessName, description, products, icp, targetMarket, competitors, apiKeys } = body;
 

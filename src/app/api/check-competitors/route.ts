@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AIProvider, CompetitorMention } from "@/types";
+import { requireAuth, rateLimit } from "@/lib/api-auth";
 
 interface CompetitorCheckRequest {
   keyword: string;
@@ -252,6 +253,14 @@ async function queryGemini(keyword: string, apiKey: string): Promise<string> {
 
 export async function POST(request: NextRequest) {
   try {
+    const { error: authError } = await requireAuth();
+    if (authError) return authError;
+
+    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    if (!rateLimit(ip, 60, 60000)) {
+      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    }
+
     const body: CompetitorCheckRequest = await request.json();
     const { keyword, websiteUrl, businessName, competitors, provider, apiKeys } = body;
 

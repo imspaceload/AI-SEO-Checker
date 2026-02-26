@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /dashboard
+Disallow: /analyze
+Disallow: /checker
+Disallow: /settings
+
+Sitemap: https://organicseo.io/sitemap.xml
